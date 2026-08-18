@@ -1,0 +1,11 @@
+# Build artifacts
+*.o
+*.hex
+*.elf
+build/
+# OS cruft
+.DS_Store
+__MACOSX/
+# SD data files created at runtime (combinations, crescendo)
+COMB.DAT
+CRESC.DAT
