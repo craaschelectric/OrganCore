@@ -14,6 +14,17 @@
 #define ORGAN_COMBINATION_MODE COMBINATION_MODE_SD
 #endif
 
+// ---- Storage medium (edit this line, or pass -DORGAN_COMBINATION_MEDIA) ----
+// Where the combination file lives: the SD card, or the Teensy 4.1 on-board
+// QSPI flash (soldered to the back-side pads) via LittleFS. The file layout is
+// byte-for-byte identical on both; only the medium changes. Assumes a 16 MB
+// (128 Mbit) flash part, which holds the full 8 MB file with room to spare.
+#define COMBINATION_MEDIA_SD       0
+#define COMBINATION_MEDIA_SPIFLASH 1
+#ifndef ORGAN_COMBINATION_MEDIA
+#define ORGAN_COMBINATION_MEDIA COMBINATION_MEDIA_SD
+#endif
+
 // ============================================================
 // SD combination file format
 //

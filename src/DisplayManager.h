@@ -25,6 +25,11 @@
 
 extern uint8_t currentScreen;
 
+// True once displayInit() has run (ui.begin() done). Lets a blocking operation
+// that may run before the display is up (e.g. a first-boot flash format) decide
+// whether it can safely draw a progress screen.
+extern bool displayReady;
+
 void displayInit();
 void displayUpdate();
 void displayProcessTouch();

@@ -42,6 +42,7 @@
 TeensyUserInterface ui;
 
 uint8_t currentScreen = SCREEN_OPERATIONAL;   // set again in displayInit()
+bool    displayReady  = false;                // set true at the end of displayInit()
 
 // ------------------------------------------------------------
 // Pin assignments for the ILI9341 + XPT2046 (TeensyUserInterface owns the SPI
@@ -455,6 +456,8 @@ void displayInit() {
     currentScreen = SCREEN_OPERATIONAL;
     runScreenNeedsFullPaint = true;
     paintRunScreenFull();
+
+    displayReady = true;
 }
 
 void displayUpdate() {

@@ -1,4 +1,4 @@
-// CombinationSD.cpp  -  local-SD combination back-end.
+// CombinationSD.cpp  -  local combination back-end (SD card or on-board QSPI flash).
 //
 // Compiled only when ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD. This file
 // provides the SD combination API AND the piston processing (pistonInit /
@@ -27,7 +27,22 @@
 #include "ScanChain.h"
 #include "PersistentConfig.h"
 #include "Debug.h"
+#include "Display.h"          // shared 'ui' for the format progress screen
+#include "DisplayManager.h"   // displayReady, displayForceRepaint
+#include <stdio.h>
 #include <SD.h>
+
+#if ORGAN_COMBINATION_MEDIA == COMBINATION_MEDIA_SPIFLASH
+  #include <LittleFS.h>
+  // On-board QSPI flash on the Teensy 4.1 back-side pads.
+  static LittleFS_QSPIFlash comboFlash;
+  static FS& comboFS = comboFlash;
+#else
+  static FS& comboFS = SD;
+#endif
+// SD (SDClass) and LittleFS_QSPIFlash both derive from FS on the Teensy core, so
+// they share one File type and the exists()/open()/remove() API — the only
+// media-specific call is begin() in combinationInit().
 
 // Chip select for the combination card. Teensy 4.1's built-in socket by default;
 // override with -DCOMBINATION_SD_CS=<pin> for an external SPI card.
@@ -91,13 +106,47 @@ static bool validateHeader() {
     return true;
 }
 
+// Draw a "formatting" screen with a progress bar while the file is blanked.
+// The blank is a long, blocking operation on QSPI NOR (~1-3 min for the full
+// 8 MB, since each 4 KB sector must be erased), so this gives feedback instead
+// of a dead screen. Safe to call before the display is up: it no-ops until
+// displayInit() has run (displayReady). Draw the frame once (first=true), then
+// grow the fill on each whole-percent change.
+static void formatProgressDraw(uint8_t percent, bool first) {
+    if (!displayReady) return;   // display not initialised yet -> format silently
+
+    const int16_t barW = 240, barH = 22;
+    const int16_t barX = ui.displaySpaceCenterX - barW / 2;
+    const int16_t barY = ui.displaySpaceCenterY - barH / 2 + 6;
+
+    if (first) {
+        ui.drawTitleBar("Preparing Memory");
+        ui.clearDisplaySpace();
+        ui.lcdSetFont(Arial_10_Bold);
+        ui.lcdSetFontColor(LCD_WHITE);
+        ui.lcdSetCursorXY(ui.displaySpaceCenterX, barY - 26);
+        ui.lcdPrintCentered("Formatting combination memory");
+        ui.lcdDrawRectangle(barX, barY, barW, barH, LCD_WHITE);   // bar outline
+    }
+
+    int16_t fillW = (int16_t)(((int32_t)(barW - 4) * percent) / 100);
+    ui.lcdDrawFilledRectangle(barX + 2, barY + 2, fillW, barH - 4, LCD_WHITE);
+
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%u%%", (unsigned)percent);
+    ui.lcdDrawFilledRectangle(barX, barY + barH + 4, barW, 16, LCD_BLACK);   // clear old %
+    ui.lcdSetFontColor(LCD_WHITE);
+    ui.lcdSetCursorXY(ui.displaySpaceCenterX, barY + barH + 6);
+    ui.lcdPrintCentered(buf);
+}
+
 // Create (or overwrite) the file: write the header, then zero-fill every record.
 // An all-zero record is a blank piston (all stops off), so no per-record valid
 // flag is needed.
 static bool formatComboFile() {
     comboFile.close();
-    SD.remove(COMBO_FILENAME);
-    comboFile = SD.open(COMBO_FILENAME, FILE_WRITE);
+    comboFS.remove(COMBO_FILENAME);
+    comboFile = comboFS.open(COMBO_FILENAME, FILE_WRITE);
     if (!comboFile) return false;
 
     uint8_t h[COMBO_HEADER_SIZE];
@@ -114,22 +163,34 @@ static bool formatComboFile() {
 
     uint8_t zeros[512];
     memset(zeros, 0, sizeof(zeros));
-    uint32_t remaining = (uint32_t)COMBO_MEM_LEVELS * COMBO_PISTON_CAP * COMBO_RECORD_SIZE;
+    const uint32_t total = (uint32_t)COMBO_MEM_LEVELS * COMBO_PISTON_CAP * COMBO_RECORD_SIZE;
+    uint32_t remaining = total;
+    uint8_t  lastPct = 255;
+
+    formatProgressDraw(0, true);
     while (remaining > 0) {
         uint16_t chunk = remaining >= 512 ? 512 : (uint16_t)remaining;
         if (comboFile.write(zeros, chunk) != (size_t)chunk) return false;
         remaining -= chunk;
+
+        uint8_t pct = (uint8_t)(((uint64_t)(total - remaining) * 100) / total);
+        if (pct != lastPct) { lastPct = pct; formatProgressDraw(pct, false); }
     }
     comboFile.flush();
+
+    // The format screen overpainted the run screen; ask for a full repaint so
+    // the next displayUpdate() restores it (harmless if the display isn't up).
+    if (displayReady) displayForceRepaint();
+
     Serial.println("DBG: Combination file formatted (blanked)");
     return true;
 }
 
 // Open the file for read+write, creating or blanking it as needed.
 static bool openOrCreateComboFile() {
-    bool needFormat = !SD.exists(COMBO_FILENAME);
+    bool needFormat = !comboFS.exists(COMBO_FILENAME);
 
-    comboFile = SD.open(COMBO_FILENAME, FILE_WRITE);   // FILE_WRITE = O_RDWR|O_CREAT
+    comboFile = comboFS.open(COMBO_FILENAME, FILE_WRITE);   // FILE_WRITE = O_RDWR|O_CREAT
     if (!comboFile) return false;
 
     if (!needFormat) {
@@ -261,11 +322,19 @@ void combinationInit() {
     combinationAvailable = false;
     combinationErrorText = nullptr;
 
+#if ORGAN_COMBINATION_MEDIA == COMBINATION_MEDIA_SPIFLASH
+    if (!comboFlash.begin()) {
+        combinationErrorText = "SPI FLASH MISSING";
+        Serial.println("DBG: LittleFS QSPI begin failed -> combination disabled");
+        return;
+    }
+#else
     if (!SD.begin(COMBINATION_SD_CS)) {
         combinationErrorText = "SD CARD MISSING";
         Serial.println("DBG: SD.begin failed -> combination disabled");
         return;
     }
+#endif
     if (!openOrCreateComboFile()) {
         combinationErrorText = "SD FILE ERROR";
         Serial.println("DBG: combination file open/create failed -> combination disabled");

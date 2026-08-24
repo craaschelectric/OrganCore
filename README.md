@@ -74,6 +74,18 @@ No new engine code — it's configuration:
 
 ## Changelog
 
+- **1.3.0** — First-boot format now shows a "Preparing Memory" screen with a progress
+  bar (the QSPI-flash format blanks the full 8 MB and can take ~1-3 min). A new
+  `displayReady` flag makes the progress draw a no-op until `displayInit()` has run, so
+  it is safe regardless of order. **To see the bar, the sketch must call `displayInit()`
+  before `combinationInit()`.**
+
+- **1.2.0** — Storage medium is now selectable with `ORGAN_COMBINATION_MEDIA`
+  (`COMBINATION_MEDIA_SD` default, or `COMBINATION_MEDIA_SPIFLASH` for the Teensy 4.1
+  on-board QSPI flash via LittleFS). The combination file layout is byte-identical on
+  both media; only `begin()` and the filesystem handle differ. Assumes a 16 MB QSPI
+  part, which holds the full 8 MB file. Combination logic unchanged.
+
 - **1.1.0** — `MAX_PISTONS` 48 → 128 (== `COMBO_PISTON_CAP`) and `MAX_SEQUENCER_PISTONS`
   24 → 64, so a virtual console can carry up to 64 generals per memory level plus divisionals.
   Backward-compatible: only grows RAM arrays; never moves a stored SD record.
