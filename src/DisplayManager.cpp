@@ -25,6 +25,7 @@
 #include "DisplayManager.h"
 #include "Display.h"            // shared ui instance
 #include "OrganConfig.h"        // TFT_CS_PIN/TFT_DC_PIN/TOUCH_CS_PIN contract
+#include "Debug.h"              // debugPrintTouch()
 #include "ScanChain.h"         // inputBuffer + bit-address macros
 #include "StopHandler.h"       // stopCommandedState[]
 #include "PistonHandler.h"     // lastGeneralName, generalDisplayDirty
@@ -430,6 +431,15 @@ void displayForceRepaint() {
 }
 
 void displayInit() {
+    // Backlight: simple always-on. BACKLIGHT_PIN=255 disables (no backlight
+    // control on this instrument), matching the POWER_SUPPLY_PIN sentinel
+    // convention. SCREEN1_BACKLIGHT_SECONDS is not used by this simple form;
+    // it's left in the contract for a possible future timeout/dim feature.
+    if (BACKLIGHT_PIN != 255) {
+        pinMode(BACKLIGHT_PIN, OUTPUT);
+        digitalWrite(BACKLIGHT_PIN, HIGH);
+    }
+
     ui.begin(TFT_CS_PIN, TFT_DC_PIN, TOUCH_CS_PIN,
              LCD_ORIENTATION_LANDSCAPE_4PIN_RIGHT, Arial_9_Bold);
     ui.setColorPaletteGray();
@@ -507,6 +517,18 @@ void displayProcessTouch() {
     retireTabBits();
 
     ui.getTouchEvents();
+
+#if DEBUG_ENABLED
+    // ui.touchEventType/touchEventX/touchEventY are public members TUI sets
+    // inside getTouchEvents() -- confirmed against TeensyUserInterface.h.
+    // touchEventX/Y are already LCD/screen-pixel coordinates (TUI applies its
+    // calibration constants before setting these), not raw ADC counts.
+    if (ui.touchEventType == TOUCH_PUSHED_EVENT) {
+        debugPrintTouch(ui.touchEventX, ui.touchEventY, false);
+    } else if (ui.touchEventType == TOUCH_RELEASED_EVENT) {
+        debugPrintTouch(ui.touchEventX, ui.touchEventY, true);
+    }
+#endif
 
     // Config button (title bar): enter the config menu. It is blocking; on Back
     // it returns here and we repaint the run screen. If the menu handed off to

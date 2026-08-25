@@ -165,4 +165,19 @@ void debugCheckOutputChanges() {
     memcpy(debugOutputPrev, outputBuffer, sizeof(outputBuffer));
 }
 
+// ============================================================
+// Touch
+// ============================================================
+
+// Print a touch event's resolved screen coordinates, one line per call.
+// Call this once per touch event (not once per poll) or the log floods.
+void debugPrintTouch(int screenX, int screenY, bool released) {
+    Serial.print("TOUCH ");
+    Serial.print(released ? "RELEASE" : "PRESS  ");
+    Serial.print("  x=");
+    Serial.print(screenX);
+    Serial.print(" y=");
+    Serial.println(screenY);
+}
+
 #endif // DEBUG_ENABLED
