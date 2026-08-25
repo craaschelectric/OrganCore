@@ -143,6 +143,11 @@ extern const uint8_t  HW_SYSEX_MSG_TYPE;
 extern const uint8_t  displayLineLCD[];
 extern const uint8_t  displayLineOffset[];
 extern const uint8_t  displayLineLen[];
+
+// ---- TFT + touch controller pins (ILI9341 + XPT2046, TUI-owned SPI bus) ----
+extern const uint8_t  TFT_CS_PIN;
+extern const uint8_t  TFT_DC_PIN;
+extern const uint8_t  TOUCH_CS_PIN;
 extern const char* const displayLineLabel[];
 extern const uint8_t  SYSEX_SAVE_LINE_INDEX;
 extern const char     SYSEX_SAVE_TRIGGER[];

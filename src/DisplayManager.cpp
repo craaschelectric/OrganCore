@@ -24,6 +24,7 @@
 
 #include "DisplayManager.h"
 #include "Display.h"            // shared ui instance
+#include "OrganConfig.h"        // TFT_CS_PIN/TFT_DC_PIN/TOUCH_CS_PIN contract
 #include "ScanChain.h"         // inputBuffer + bit-address macros
 #include "StopHandler.h"       // stopCommandedState[]
 #include "PistonHandler.h"     // lastGeneralName, generalDisplayDirty
@@ -46,12 +47,10 @@ bool    displayReady  = false;                // set true at the end of displayI
 
 // ------------------------------------------------------------
 // Pin assignments for the ILI9341 + XPT2046 (TeensyUserInterface owns the SPI
-// bus). These match the standard PJRC/TUI wiring; change here if the console
-// wires the display differently.
+// bus) come from the OrganConfig.h contract -- TFT_CS_PIN/TFT_DC_PIN/
+// TOUCH_CS_PIN, defined per-instrument in ConfigData.cpp -- so each console's
+// wiring is sketch data, not a library edit.
 // ------------------------------------------------------------
-static const int LCD_CS_PIN   = 10;
-static const int LCD_DC_PIN   = 9;
-static const int TOUCH_CS_PIN = 8;
 
 // ------------------------------------------------------------
 // Run-screen layout (320x240 landscape)
@@ -431,7 +430,7 @@ void displayForceRepaint() {
 }
 
 void displayInit() {
-    ui.begin(LCD_CS_PIN, LCD_DC_PIN, TOUCH_CS_PIN,
+    ui.begin(TFT_CS_PIN, TFT_DC_PIN, TOUCH_CS_PIN,
              LCD_ORIENTATION_LANDSCAPE_4PIN_RIGHT, Arial_9_Bold);
     ui.setColorPaletteGray();
 

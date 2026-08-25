@@ -1,0 +1,90 @@
+From 4e7e70b12053d65068cda66be25c113c690334a3 Mon Sep 17 00:00:00 2001
+From: OrganCore Dev <dev@craaschelectric.local>
+Date: Tue, 25 Aug 2026 15:59:18 +0000
+Subject: [PATCH] v1.3.1: move TFT/touch CS pins to OrganConfig.h contract
+
+Previously DisplayManager.cpp hardcoded LCD_CS_PIN=10/LCD_DC_PIN=9/
+TOUCH_CS_PIN=8 as file-local statics -- unreachable from any sketch,
+unlike every other pin/address in the system.
+
+- OrganConfig.h: declare extern const uint8_t TFT_CS_PIN, TFT_DC_PIN,
+  TOUCH_CS_PIN
+- DisplayManager.cpp: drop the hardcoded statics, include OrganConfig.h,
+  use the contract values in ui.begin()
+
+Values unchanged (10/9/8) -- this is a pure refactor, no behavior change,
+until an instrument's ConfigData.cpp overrides them. Opus 62's
+ConfigData.cpp now defines TFT_CS_PIN=10/TFT_DC_PIN=9/TOUCH_CS_PIN=8.
+---
+ library.properties     |  2 +-
+ src/DisplayManager.cpp | 11 +++++------
+ src/OrganConfig.h      |  5 +++++
+ 3 files changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/library.properties b/library.properties
+index 9bf171b..788c32e 100644
+--- a/library.properties
++++ b/library.properties
+@@ -1,5 +1,5 @@
+ name=OrganCore
+-version=1.3.0
++version=1.3.1
+ author=Craasch Electric
+ maintainer=Craasch Electric
+ sentence=Shared embedded organ controller core.
+diff --git a/src/DisplayManager.cpp b/src/DisplayManager.cpp
+index 070c129..cde99a9 100644
+--- a/src/DisplayManager.cpp
++++ b/src/DisplayManager.cpp
+@@ -24,6 +24,7 @@
+ 
+ #include "DisplayManager.h"
+ #include "Display.h"            // shared ui instance
++#include "OrganConfig.h"        // TFT_CS_PIN/TFT_DC_PIN/TOUCH_CS_PIN contract
+ #include "ScanChain.h"         // inputBuffer + bit-address macros
+ #include "StopHandler.h"       // stopCommandedState[]
+ #include "PistonHandler.h"     // lastGeneralName, generalDisplayDirty
+@@ -46,12 +47,10 @@ bool    displayReady  = false;                // set true at the end of displayI
+ 
+ // ------------------------------------------------------------
+ // Pin assignments for the ILI9341 + XPT2046 (TeensyUserInterface owns the SPI
+-// bus). These match the standard PJRC/TUI wiring; change here if the console
+-// wires the display differently.
++// bus) come from the OrganConfig.h contract -- TFT_CS_PIN/TFT_DC_PIN/
++// TOUCH_CS_PIN, defined per-instrument in ConfigData.cpp -- so each console's
++// wiring is sketch data, not a library edit.
+ // ------------------------------------------------------------
+-static const int LCD_CS_PIN   = 10;
+-static const int LCD_DC_PIN   = 9;
+-static const int TOUCH_CS_PIN = 8;
+ 
+ // ------------------------------------------------------------
+ // Run-screen layout (320x240 landscape)
+@@ -431,7 +430,7 @@ void displayForceRepaint() {
+ }
+ 
+ void displayInit() {
+-    ui.begin(LCD_CS_PIN, LCD_DC_PIN, TOUCH_CS_PIN,
++    ui.begin(TFT_CS_PIN, TFT_DC_PIN, TOUCH_CS_PIN,
+              LCD_ORIENTATION_LANDSCAPE_4PIN_RIGHT, Arial_9_Bold);
+     ui.setColorPaletteGray();
+ 
+diff --git a/src/OrganConfig.h b/src/OrganConfig.h
+index b45cc77..f23ab69 100644
+--- a/src/OrganConfig.h
++++ b/src/OrganConfig.h
+@@ -143,6 +143,11 @@ extern const uint8_t  HW_SYSEX_MSG_TYPE;
+ extern const uint8_t  displayLineLCD[];
+ extern const uint8_t  displayLineOffset[];
+ extern const uint8_t  displayLineLen[];
++
++// ---- TFT + touch controller pins (ILI9341 + XPT2046, TUI-owned SPI bus) ----
++extern const uint8_t  TFT_CS_PIN;
++extern const uint8_t  TFT_DC_PIN;
++extern const uint8_t  TOUCH_CS_PIN;
+ extern const char* const displayLineLabel[];
+ extern const uint8_t  SYSEX_SAVE_LINE_INDEX;
+ extern const char     SYSEX_SAVE_TRIGGER[];
+-- 
+2.43.0
+
