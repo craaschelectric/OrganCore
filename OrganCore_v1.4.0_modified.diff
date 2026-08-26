@@ -1,0 +1,346 @@
+diff --git a/README.md b/README.md
+index dd1b235..08cdc99 100644
+--- a/README.md
++++ b/README.md
+@@ -47,6 +47,51 @@ Selected at compile time by `ORGAN_COMBINATION_MODE` in `CombinationConfig.h`:
+ matches the piston's division. `stopDivision` (control scope) and the capture flags (mask
+ membership) are independent — a stop can be in a division yet excluded from its divisional.
+ 
++## Builder piston assignment
++
++A touchscreen flow (`Config → Assign Pistons`) that lets a builder assign the console's
++pistons and control buttons **in the field, without recompiling**, by parking on a logical
++function and pressing the physical button(s) that should trigger it. Compiled only for
++local-capture on SD-card media (`ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD` and
++`ORGAN_COMBINATION_MEDIA != COMBINATION_MEDIA_SPIFLASH`, together the guard
++`ORGANCORE_HAS_REMAP_STORE`). In HW mode, SPI-flash media, the whole feature compiles out and
++`applyRemaps()` reads the const `remapFrom[]`/`remapTo[]` exactly as before.
++
++**Canonical virtual slots.** Every assignable function has one canonical address on a reserved
++virtual chain (`REMAP_SLOT_CHAIN`, index 11 — the top of the widened `MAX_CHAINS = 12` space,
++so real chains growing upward from 0 never collide). Calibration never rewrites the piston list;
++it only appends remap entries `{pressed physical addr → slot addr}`. `applyRemaps()` then funnels
++each press onto its slot before any handler runs, so the runtime piston/handler code is
++unchanged and simply reads the canonical slots it always read. Multiple physical buttons can
++funnel onto one slot (a General Cancel on both the rail and a toe stud). Captures come from
++**all input chains including virtual ones** (a MIDI pedalboard's embedded pistons report through
++a virtual chain and must be assignable); only the slot chain is excluded, being a destination.
++
++**The slot layout is frozen**, exactly like the combination file's record layout: stored `to`
++addresses are computed from it, so changing a cap or stride renumbers slots and silently
++corrupts stored assignments. Layout on the slot chain (211 of 256 bits used), walked in order:
++7 known controls (Set, General Cancel, Next, Previous, Mem+, Mem−, Shift), 64 generals, 128
++divisionals (8 divisions × 16, division-major, stride 16, frozen order **0 Pedal, 1 Great,
++2 Swell, 3 Choir, 4 Solo**, then further divisions), 12 spare controls (reserved, renameable,
++walked last). To grow later: append a **new** block at a fresh range, never widen one in place,
++and bump `REMAP_FORMAT_VERSION`.
++
++**Screen controls.** *Next* advances one function; *Next Block* jumps to the next division (or
++region) and is always available with no validation, so a builder who wants, say, the pedal
++divisional positions as extra generals leaves the Pedal block empty, advances to the Generals
++block, and assigns those physical pedal buttons there. *Clear* drops the current function's
++assignments; *Start Over* empties the table; *Save* writes `REMAP.DAT`; *Cancel* discards.
++Presses capture on the rising edge, one per press (per-address release-debounce). Each capture
++prints a serial line naming the function and the captured CWB address; the builder sees only the
++function name and a live count of buttons assigned to it.
++
++**Storage.** `REMAP.DAT` on the same card as `COMB.DAT` (magic `OCRM`, versioned, with the slot
++chain and `MAX_REMAPS` cap validated). Loaded by `remapStoreInit()`, called at the end of
++`combinationInit()` once the card is mounted — no new sketch ordering. **A missing file means
++never-calibrated** → the const remap defaults stay in effect; **a valid zero-count file means
++deliberately-cleared** (Start Over) → the live empty table wins; a foreign/old/truncated file is
++blanked to zero-count.
++
+ ## Stop truth
+ 
+ `stopCommandedState[]` holds each stop's state. A stop with a valid coil address is a **SAM**
+@@ -74,6 +119,20 @@ No new engine code — it's configuration:
+ 
+ ## Changelog
+ 
++- **1.4.0** — **Builder piston assignment** (see the section above): a touchscreen
++  `Config → Assign Pistons` flow that funnels builder-pressed physical pistons onto frozen
++  canonical virtual slots via an SD-backed remap table (`REMAP.DAT`), for local-capture on
++  SD-card media (guard `ORGANCORE_HAS_REMAP_STORE`). Enabling constants changed, all
++  backward-compatible in the append-only sense (grow RAM/format caps, never move a stored
++  record): `MAX_CHAINS` 8 → 12 with the CWB chain field widened to 4 bits; `ADDR_DISABLED`
++  `0x800` → `0xF00` (0x800 became a real address — chain 8 — once chains 8–11 exist);
++  `MAX_REMAPS` 16 → 256 (now `uint16_t`); new frozen `REMAP_SLOT_*` layout constants; new
++  `RemapStore`, `PistonAssignScreen`, and pure/host-tested `PistonAssignSlots`. **Sketch
++  migration** (`ConfigData.cpp`): define `NUM_REMAPS` as `uint16_t`, add `NUM_DIVISIONS`,
++  replace any raw `0x800` disabled-address literals with `ADDR_DISABLED`, and add
++  `static_assert(NUM_CHAINS <= REMAP_SLOT_CHAIN, "...")`. `applyRemaps()` selects the live vs
++  const source at compile time; HW and SPI-flash builds are unaffected.
++
+ - **1.3.0** — First-boot format now shows a "Preparing Memory" screen with a progress
+   bar (the QSPI-flash format blanks the full 8 MB and can take ~1-3 min). A new
+   `displayReady` flag makes the progress draw a no-op until `displayInit()` has run, so
+diff --git a/library.properties b/library.properties
+index 93a3e83..7da7188 100644
+--- a/library.properties
++++ b/library.properties
+@@ -1,9 +1,9 @@
+ name=OrganCore
+-version=1.3.4
++version=1.4.0
+ author=Craasch Electric
+ maintainer=Craasch Electric
+ sentence=Shared embedded organ controller core.
+-paragraph=Scanning, input handlers, local-SD combination action, crescendo, MIDI I/O, display, and optional pitch/temperature tuning for Teensy 4.1 organ consoles.
++paragraph=Scanning, input handlers, local-SD combination action, builder piston assignment, crescendo, MIDI I/O, display, and optional pitch/temperature tuning for Teensy 4.1 organ consoles.
+ category=Device Control
+ url=https://github.com/craaschelectric
+ architectures=*
+diff --git a/src/CombinationSD.cpp b/src/CombinationSD.cpp
+index b9ed61c..41e8f16 100644
+--- a/src/CombinationSD.cpp
++++ b/src/CombinationSD.cpp
+@@ -27,6 +27,7 @@
+ #include "ScanChain.h"
+ #include "PersistentConfig.h"
+ #include "Debug.h"
++#include "RemapStore.h"       // builder piston-assign store; init after SD is mounted (SD-card media only)
+ #include "Display.h"          // shared 'ui' for the format progress screen
+ #include "DisplayManager.h"   // displayReady, displayForceRepaint
+ #include <stdio.h>
+@@ -343,6 +344,13 @@ void combinationInit() {
+ 
+     combinationAvailable = true;
+     Serial.print("DBG: Combination ready @level "); Serial.println(combinationMemoryLevel);
++
++#ifdef ORGANCORE_HAS_REMAP_STORE
++    // The SD card is now mounted and owned here; load the builder piston-assign
++    // table from the same card. Guarded to SD-card media (the store does not yet
++    // support SPI-flash). Missing REMAP.DAT => const remap defaults stay in effect.
++    remapStoreInit();
++#endif
+ }
+ 
+ // ============================================================
+diff --git a/src/CoreConfig.h b/src/CoreConfig.h
+index a9ea58e..9d04bdf 100644
+--- a/src/CoreConfig.h
++++ b/src/CoreConfig.h
+@@ -8,7 +8,7 @@
+ #include <Arduino.h>
+ 
+ // ---- Fixed capacities (used for all static array sizing) ----
+-constexpr uint8_t  MAX_CHAINS         = 8;
++constexpr uint8_t  MAX_CHAINS         = 12;  // raised from 8 for the builder piston-assign slot chain; chain index field widened to 4 bits (see ADDR_CHAIN) and ADDR_DISABLED moved off chain 8. Backward-compatible: only grows RAM scan buffers.
+ constexpr uint16_t BITS_PER_CHAIN     = 256;
+ constexpr uint8_t  WORDS_PER_CHAIN    = 16;
+ constexpr uint16_t MAX_STOPS          = 256;
+@@ -16,11 +16,16 @@ constexpr uint8_t  MAX_KEYBOARDS      = 8;
+ constexpr uint8_t  MAX_EXPRESSIONS    = 4;
+ constexpr uint8_t  MAX_ACTIVE_COILS   = 128;
+ constexpr uint8_t  MAX_PISTONS        = 128;  // raised from 48 to fit 64 generals + divisionals on a virtual console; == COMBO_PISTON_CAP ceiling. Backward-compatible: only grows RAM arrays, never moves an SD record.
+-constexpr uint8_t  MAX_REMAPS         = 16;
++constexpr uint16_t MAX_REMAPS         = 256;  // raised from 16 (uint8_t) for SD-backed builder piston assignment; live arrays are 256*2*2 = 1KB RAM. Frozen cap in the REMAP.DAT format.
+ constexpr uint8_t  MAX_SEQUENCER_PISTONS = 64;  // raised from 24 so the sequencer can walk up to 64 generals per memory level
+ constexpr uint8_t  MAX_DISPLAY_LINES  = 4;
+ 
+-constexpr uint16_t ADDR_DISABLED      = 0x800;
++// Moved from 0x800 to 0xF00 when MAX_CHAINS rose past 8: 0x800 decodes as a REAL
++// address (chain 8, word 0, bit 0) once chains 8..11 exist. 0xF00 is chain 15 —
++// above MAX_CHAINS (12), so no physical or virtual chain can occupy it. Any
++// ConfigData.cpp that wrote the raw literal 0x800 for a disabled address must
++// switch to ADDR_DISABLED (or 0xF00).
++constexpr uint16_t ADDR_DISABLED      = 0xF00;
+ 
+ // ---- Chain types / direction ----
+ constexpr uint8_t CHAIN_TYPE_MULTIDROP  = 0;  // SAM sense bus: sync HIGH->LOW
+@@ -42,6 +47,65 @@ constexpr uint8_t PISTON_TYPE_MEM_UP     = 7;  // local-SD combination
+ constexpr uint8_t PISTON_TYPE_MEM_DOWN   = 8;
+ constexpr uint8_t PISTON_TYPE_MEM_ZERO   = 9;
+ 
++// ---- Builder piston-assignment virtual slots (FROZEN LAYOUT) ----
++// Canonical destination addresses for the SD-backed builder-assignable remap
++// system (see RemapStore / PistonAssignScreen). Every builder-assigned piston
++// remaps ONTO one of these virtual bits; the instrument's piston list points its
++// canonical addresses here. These constants are FROZEN the day a builder first
++// saves REMAP.DAT: the stored file holds "to" addresses computed from this
++// layout, so changing a cap or stride renumbers slots and silently corrupts
++// stored assignments (same append-only rule as the SD combination format). To
++// grow later: append a NEW block at a fresh address range, never widen an
++// existing block in place, and bump REMAP_FORMAT_VERSION.
++//
++// The slots live on a dedicated virtual chain (REMAP_SLOT_CHAIN) that NO
++// hardware scan writes — only applyRemaps() sets bits there. Single linear
++// allocation on that chain, in walk order:
++//
++//   [ 7 known controls ][ 64 generals ][ 128 divisionals ][ 12 spare controls ]
++//   bit 0..6             bit 7..70      bit 71..198         bit 199..210
++//
++// Divisionals are division-major, fixed stride 16: division d, piston p (0-based)
++// is slot (REMAP_SLOT_DIV_BASE + d*16 + p). Division order is frozen:
++// 0 Pedal, 1 Great, 2 Swell, 3 Choir, 4 Solo, then any further divisions.
++// 211 slots used of 256 on the chain (45 spare bits, deliberately unallocated).
++//
++// The slot chain INDEX is frozen too: stored "to" addresses embed it, so it must
++// be identical on every console and survive a console adding real chains later.
++// Chain 11 is the TOP index (MAX_CHAINS-1); real chains allocate upward from 0,
++// so reserving the top keeps them clear. A console needing all 12 chains for
++// hardware cannot use SD piston assignment (enforce NUM_CHAINS <= REMAP_SLOT_CHAIN
++// with a static_assert in the sketch's ConfigData).
++constexpr uint8_t  REMAP_SLOT_CHAIN       = 11;
++
++constexpr uint8_t  REMAP_KNOWN_CONTROLS   = 7;   // Set, GC, Next, Prev, Mem+, Mem-, Shift (this order)
++constexpr uint8_t  REMAP_MAX_GENERALS     = 64;
++constexpr uint8_t  REMAP_DIVISIONS        = 8;
++constexpr uint8_t  REMAP_PISTONS_PER_DIV  = 16;
++constexpr uint8_t  REMAP_SPARE_CONTROLS   = 12;  // reserved, renameable later; walked LAST
++
++constexpr uint16_t REMAP_DIVISIONALS      = REMAP_DIVISIONS * REMAP_PISTONS_PER_DIV;  // 128
++constexpr uint16_t REMAP_TOTAL_SLOTS      = REMAP_KNOWN_CONTROLS + REMAP_MAX_GENERALS
++                                          + REMAP_DIVISIONALS + REMAP_SPARE_CONTROLS;  // 211
++
++// Bit offsets of each region within REMAP_SLOT_CHAIN (linear, in walk order).
++constexpr uint16_t REMAP_SLOT_CTRL_BASE   = 0;
++constexpr uint16_t REMAP_SLOT_GEN_BASE    = REMAP_SLOT_CTRL_BASE + REMAP_KNOWN_CONTROLS;   // 7
++constexpr uint16_t REMAP_SLOT_DIV_BASE    = REMAP_SLOT_GEN_BASE  + REMAP_MAX_GENERALS;     // 71
++constexpr uint16_t REMAP_SLOT_SPARE_BASE  = REMAP_SLOT_DIV_BASE  + REMAP_DIVISIONALS;      // 199
++
++static_assert(REMAP_TOTAL_SLOTS <= BITS_PER_CHAIN, "remap slots exceed one virtual chain");
++static_assert(REMAP_SLOT_CHAIN  <  MAX_CHAINS,     "remap slot chain index out of range");
++
++// Known-control slot indices within the control block (0..6), fixed order.
++constexpr uint8_t  REMAP_CTRL_SET   = 0;
++constexpr uint8_t  REMAP_CTRL_GC    = 1;
++constexpr uint8_t  REMAP_CTRL_NEXT  = 2;
++constexpr uint8_t  REMAP_CTRL_PREV  = 3;
++constexpr uint8_t  REMAP_CTRL_MEMUP = 4;
++constexpr uint8_t  REMAP_CTRL_MEMDN = 5;
++constexpr uint8_t  REMAP_CTRL_SHIFT = 6;
++
+ // ---- Combination back-end mode (compile-time selection) ----
+ // Which combination action is compiled in. Exactly one back-end is built.
+ //   HW: pistons are Hauptwerk-side (piston -> MIDI note -> the PC engine builds
+@@ -72,8 +136,9 @@ constexpr uint8_t SCREEN_OPERATIONAL   = 2;
+ constexpr uint8_t SCREEN_CONFIG        = 3;  // blocking config menu (scanning paused)
+ constexpr uint8_t SCREEN_CRESCENDO     = 4;  // non-blocking crescendo programming (scanning runs)
+ 
+-// ---- CWB address helpers  0xCWB (C=chain 0-7, W=word 0-F, B=bit 0-F) ----
+-#define ADDR_CHAIN(a)    (((a) >> 8) & 0x07)
++// ---- CWB address helpers  0xCWB (C=chain 0-F, W=word 0-F, B=bit 0-F) ----
++// Chain field is 4 bits (was 3): supports chain indices 0..11 (MAX_CHAINS=12).
++#define ADDR_CHAIN(a)    (((a) >> 8) & 0x0F)
+ #define ADDR_WORD(a)     (((a) >> 4) & 0x0F)
+ #define ADDR_BIT(a)      ((a) & 0x0F)
+ #define MAKE_ADDR(c,w,b) (((c)<<8)|((w)<<4)|(b))
+diff --git a/src/DisplayManager.cpp b/src/DisplayManager.cpp
+index 01811c2..cf9b730 100644
+--- a/src/DisplayManager.cpp
++++ b/src/DisplayManager.cpp
+@@ -32,6 +32,7 @@
+ #include "Combination.h"       // combinationAvailable/MemoryLevel/ErrorText, combinationMemStep
+ #include "Crescendo.h"         // crescendo overlay level + programming screen API
+ #include "ExpressionCalScreen.h"
++#include "PistonAssignScreen.h"   // builder piston assignment (SD mode only; self-guards)
+ #include "TuningConfig.h"
+ #if ORGAN_HAS_TUNING
+ #include "TuningScreen.h"
+@@ -376,19 +377,32 @@ static void runConfigScreen() {
+         ui.drawTitleBar("Configuration");
+         ui.clearDisplaySpace();
+ 
++        // Entries are stacked from the top of the display space so the count can
++        // vary with compile-time features (piston assign in SD mode, tuning)
++        // without overlapping. rowY() gives the Nth row's center-y.
++        int   row = 0;
++        auto  rowY = [&](int n) { return ui.displaySpaceCenterY - 96 + n * 42; };
++
+         BUTTON calBtn   = { "Expression Calibration",
+-                            ui.displaySpaceCenterX, ui.displaySpaceCenterY - 72, 260, 40 };
++                            ui.displaySpaceCenterX, rowY(row++), 260, 38 };
++        ui.drawButton(calBtn);
++
+         BUTTON crescBtn = { "Crescendo Program",
+-                            ui.displaySpaceCenterX, ui.displaySpaceCenterY - 24, 260, 40 };
++                            ui.displaySpaceCenterX, rowY(row++), 260, 38 };
++        ui.drawButton(crescBtn);
++
++#ifdef ORGANCORE_HAS_REMAP_STORE
++        BUTTON assignBtn = { "Assign Pistons",
++                             ui.displaySpaceCenterX, rowY(row++), 260, 38 };
++        ui.drawButton(assignBtn);
++#endif
+ #if ORGAN_HAS_TUNING
+         BUTTON tuneBtn  = { "Tuning / Temperature",
+-                            ui.displaySpaceCenterX, ui.displaySpaceCenterY + 24, 260, 40 };
++                            ui.displaySpaceCenterX, rowY(row++), 260, 38 };
+         ui.drawButton(tuneBtn);
+ #endif
+         BUTTON backBtn  = { "Back",
+-                            ui.displaySpaceCenterX, ui.displaySpaceCenterY + 72, 160, 36 };
+-        ui.drawButton(calBtn);
+-        ui.drawButton(crescBtn);
++                            ui.displaySpaceCenterX, rowY(row++), 160, 36 };
+         ui.drawButton(backBtn);
+ 
+         bool leaveMenu = false;
+@@ -405,6 +419,12 @@ static void runConfigScreen() {
+                 currentScreen = SCREEN_CRESCENDO;
+                 return;
+             }
++#ifdef ORGANCORE_HAS_REMAP_STORE
++            if (ui.checkForButtonClicked(assignBtn)) {
++                pistonAssignScreenRun();     // blocking; returns here on Save/Cancel
++                break;                        // redraw this menu
++            }
++#endif
+ #if ORGAN_HAS_TUNING
+             if (ui.checkForButtonClicked(tuneBtn)) {
+                 tuningScreenRun();           // blocking; returns here on Back
+diff --git a/src/InputRemap.h b/src/InputRemap.h
+index 7f1a2cb..bcf577c 100644
+--- a/src/InputRemap.h
++++ b/src/InputRemap.h
+@@ -9,11 +9,29 @@
+ 
+ #include "OrganCore.h"
+ #include "ScanChain.h"
++#include "CombinationConfig.h"
++#include "RemapStore.h"   // defines ORGANCORE_HAS_REMAP_STORE when the live store is compiled
+ 
++// Source selection: in local-capture (SD) mode, once a valid REMAP.DAT has been
++// loaded, the builder-assigned live table is the remap source. Otherwise (HW
++// mode, or SD mode with no file yet) the const remapFrom[]/remapTo[] from
++// OrganConfig.h are used. The merge logic below is identical for both — only the
++// array pointers and count differ.
+ inline void applyRemaps() {
+-    for (uint8_t i = 0; i < NUM_REMAPS; i++) {
+-        uint16_t from = remapFrom[i];
+-        uint16_t to   = remapTo[i];
++#ifdef ORGANCORE_HAS_REMAP_STORE
++    const bool      remapLive = remapSourceIsLive();
++    const uint16_t* fromArr   = remapLive ? liveRemapFrom : remapFrom;
++    const uint16_t* toArr     = remapLive ? liveRemapTo   : remapTo;
++    const uint16_t  remapN    = remapLive ? liveNumRemaps : NUM_REMAPS;
++#else
++    const uint16_t* fromArr   = remapFrom;
++    const uint16_t* toArr     = remapTo;
++    const uint16_t  remapN    = NUM_REMAPS;
++#endif
++
++    for (uint16_t i = 0; i < remapN; i++) {
++        uint16_t from = fromArr[i];
++        uint16_t to   = toArr[i];
+         if (!ADDR_VALID(from) || !ADDR_VALID(to)) continue;
+ 
+         uint8_t fChain = ADDR_CHAIN(from);
+diff --git a/src/OrganConfig.h b/src/OrganConfig.h
+index f23ab69..d6b2db6 100644
+--- a/src/OrganConfig.h
++++ b/src/OrganConfig.h
+@@ -15,9 +15,10 @@ extern const uint16_t NUM_STOPS;
+ extern const uint8_t  NUM_KEYBOARDS;
+ extern const uint8_t  NUM_EXPRESSIONS;
+ extern const uint8_t  NUM_PISTONS;
+-extern const uint8_t  NUM_REMAPS;
++extern const uint16_t NUM_REMAPS;   // widened from uint8_t: MAX_REMAPS is now 256
+ extern const uint8_t  NUM_SEQUENCER_PISTONS;
+ extern const uint8_t  NUM_GENERALS;
++extern const uint8_t  NUM_DIVISIONS;  // divisions this console has (<= REMAP_DIVISIONS); bounds the piston-assign divisional walk. Frozen order: 0 Pedal,1 Great,2 Swell,3 Choir,4 Solo,...
+ extern const uint8_t  NUM_DISPLAY_LINES;
+ 
+ // ---- Timing (per-instrument; used as runtime delays) ----

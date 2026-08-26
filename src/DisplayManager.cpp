@@ -32,6 +32,7 @@
 #include "Combination.h"       // combinationAvailable/MemoryLevel/ErrorText, combinationMemStep
 #include "Crescendo.h"         // crescendo overlay level + programming screen API
 #include "ExpressionCalScreen.h"
+#include "PistonAssignScreen.h"   // builder piston assignment (SD mode only; self-guards)
 #include "TuningConfig.h"
 #if ORGAN_HAS_TUNING
 #include "TuningScreen.h"
@@ -376,19 +377,32 @@ static void runConfigScreen() {
         ui.drawTitleBar("Configuration");
         ui.clearDisplaySpace();
 
+        // Entries are stacked from the top of the display space so the count can
+        // vary with compile-time features (piston assign in SD mode, tuning)
+        // without overlapping. rowY() gives the Nth row's center-y.
+        int   row = 0;
+        auto  rowY = [&](int n) { return ui.displaySpaceCenterY - 96 + n * 42; };
+
         BUTTON calBtn   = { "Expression Calibration",
-                            ui.displaySpaceCenterX, ui.displaySpaceCenterY - 72, 260, 40 };
+                            ui.displaySpaceCenterX, rowY(row++), 260, 38 };
+        ui.drawButton(calBtn);
+
         BUTTON crescBtn = { "Crescendo Program",
-                            ui.displaySpaceCenterX, ui.displaySpaceCenterY - 24, 260, 40 };
+                            ui.displaySpaceCenterX, rowY(row++), 260, 38 };
+        ui.drawButton(crescBtn);
+
+#ifdef ORGANCORE_HAS_REMAP_STORE
+        BUTTON assignBtn = { "Assign Pistons",
+                             ui.displaySpaceCenterX, rowY(row++), 260, 38 };
+        ui.drawButton(assignBtn);
+#endif
 #if ORGAN_HAS_TUNING
         BUTTON tuneBtn  = { "Tuning / Temperature",
-                            ui.displaySpaceCenterX, ui.displaySpaceCenterY + 24, 260, 40 };
+                            ui.displaySpaceCenterX, rowY(row++), 260, 38 };
         ui.drawButton(tuneBtn);
 #endif
         BUTTON backBtn  = { "Back",
-                            ui.displaySpaceCenterX, ui.displaySpaceCenterY + 72, 160, 36 };
-        ui.drawButton(calBtn);
-        ui.drawButton(crescBtn);
+                            ui.displaySpaceCenterX, rowY(row++), 160, 36 };
         ui.drawButton(backBtn);
 
         bool leaveMenu = false;
@@ -405,6 +419,12 @@ static void runConfigScreen() {
                 currentScreen = SCREEN_CRESCENDO;
                 return;
             }
+#ifdef ORGANCORE_HAS_REMAP_STORE
+            if (ui.checkForButtonClicked(assignBtn)) {
+                pistonAssignScreenRun();     // blocking; returns here on Save/Cancel
+                break;                        // redraw this menu
+            }
+#endif
 #if ORGAN_HAS_TUNING
             if (ui.checkForButtonClicked(tuneBtn)) {
                 tuningScreenRun();           // blocking; returns here on Back

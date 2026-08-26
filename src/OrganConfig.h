@@ -15,9 +15,10 @@ extern const uint16_t NUM_STOPS;
 extern const uint8_t  NUM_KEYBOARDS;
 extern const uint8_t  NUM_EXPRESSIONS;
 extern const uint8_t  NUM_PISTONS;
-extern const uint8_t  NUM_REMAPS;
+extern const uint16_t NUM_REMAPS;   // widened from uint8_t: MAX_REMAPS is now 256
 extern const uint8_t  NUM_SEQUENCER_PISTONS;
 extern const uint8_t  NUM_GENERALS;
+extern const uint8_t  NUM_DIVISIONS;  // divisions this console has (<= REMAP_DIVISIONS); bounds the piston-assign divisional walk. Frozen order: 0 Pedal,1 Great,2 Swell,3 Choir,4 Solo,...
 extern const uint8_t  NUM_DISPLAY_LINES;
 
 // ---- Timing (per-instrument; used as runtime delays) ----

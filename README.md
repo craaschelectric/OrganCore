@@ -47,6 +47,51 @@ Selected at compile time by `ORGAN_COMBINATION_MODE` in `CombinationConfig.h`:
 matches the piston's division. `stopDivision` (control scope) and the capture flags (mask
 membership) are independent — a stop can be in a division yet excluded from its divisional.
 
+## Builder piston assignment
+
+A touchscreen flow (`Config → Assign Pistons`) that lets a builder assign the console's
+pistons and control buttons **in the field, without recompiling**, by parking on a logical
+function and pressing the physical button(s) that should trigger it. Compiled only for
+local-capture on SD-card media (`ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD` and
+`ORGAN_COMBINATION_MEDIA != COMBINATION_MEDIA_SPIFLASH`, together the guard
+`ORGANCORE_HAS_REMAP_STORE`). In HW mode, SPI-flash media, the whole feature compiles out and
+`applyRemaps()` reads the const `remapFrom[]`/`remapTo[]` exactly as before.
+
+**Canonical virtual slots.** Every assignable function has one canonical address on a reserved
+virtual chain (`REMAP_SLOT_CHAIN`, index 11 — the top of the widened `MAX_CHAINS = 12` space,
+so real chains growing upward from 0 never collide). Calibration never rewrites the piston list;
+it only appends remap entries `{pressed physical addr → slot addr}`. `applyRemaps()` then funnels
+each press onto its slot before any handler runs, so the runtime piston/handler code is
+unchanged and simply reads the canonical slots it always read. Multiple physical buttons can
+funnel onto one slot (a General Cancel on both the rail and a toe stud). Captures come from
+**all input chains including virtual ones** (a MIDI pedalboard's embedded pistons report through
+a virtual chain and must be assignable); only the slot chain is excluded, being a destination.
+
+**The slot layout is frozen**, exactly like the combination file's record layout: stored `to`
+addresses are computed from it, so changing a cap or stride renumbers slots and silently
+corrupts stored assignments. Layout on the slot chain (211 of 256 bits used), walked in order:
+7 known controls (Set, General Cancel, Next, Previous, Mem+, Mem−, Shift), 64 generals, 128
+divisionals (8 divisions × 16, division-major, stride 16, frozen order **0 Pedal, 1 Great,
+2 Swell, 3 Choir, 4 Solo**, then further divisions), 12 spare controls (reserved, renameable,
+walked last). To grow later: append a **new** block at a fresh range, never widen one in place,
+and bump `REMAP_FORMAT_VERSION`.
+
+**Screen controls.** *Next* advances one function; *Next Block* jumps to the next division (or
+region) and is always available with no validation, so a builder who wants, say, the pedal
+divisional positions as extra generals leaves the Pedal block empty, advances to the Generals
+block, and assigns those physical pedal buttons there. *Clear* drops the current function's
+assignments; *Start Over* empties the table; *Save* writes `REMAP.DAT`; *Cancel* discards.
+Presses capture on the rising edge, one per press (per-address release-debounce). Each capture
+prints a serial line naming the function and the captured CWB address; the builder sees only the
+function name and a live count of buttons assigned to it.
+
+**Storage.** `REMAP.DAT` on the same card as `COMB.DAT` (magic `OCRM`, versioned, with the slot
+chain and `MAX_REMAPS` cap validated). Loaded by `remapStoreInit()`, called at the end of
+`combinationInit()` once the card is mounted — no new sketch ordering. **A missing file means
+never-calibrated** → the const remap defaults stay in effect; **a valid zero-count file means
+deliberately-cleared** (Start Over) → the live empty table wins; a foreign/old/truncated file is
+blanked to zero-count.
+
 ## Stop truth
 
 `stopCommandedState[]` holds each stop's state. A stop with a valid coil address is a **SAM**
@@ -73,6 +118,20 @@ No new engine code — it's configuration:
   only emitter (`stopSetState`) is called only by local recall/cancel.
 
 ## Changelog
+
+- **1.4.0** — **Builder piston assignment** (see the section above): a touchscreen
+  `Config → Assign Pistons` flow that funnels builder-pressed physical pistons onto frozen
+  canonical virtual slots via an SD-backed remap table (`REMAP.DAT`), for local-capture on
+  SD-card media (guard `ORGANCORE_HAS_REMAP_STORE`). Enabling constants changed, all
+  backward-compatible in the append-only sense (grow RAM/format caps, never move a stored
+  record): `MAX_CHAINS` 8 → 12 with the CWB chain field widened to 4 bits; `ADDR_DISABLED`
+  `0x800` → `0xF00` (0x800 became a real address — chain 8 — once chains 8–11 exist);
+  `MAX_REMAPS` 16 → 256 (now `uint16_t`); new frozen `REMAP_SLOT_*` layout constants; new
+  `RemapStore`, `PistonAssignScreen`, and pure/host-tested `PistonAssignSlots`. **Sketch
+  migration** (`ConfigData.cpp`): define `NUM_REMAPS` as `uint16_t`, add `NUM_DIVISIONS`,
+  replace any raw `0x800` disabled-address literals with `ADDR_DISABLED`, and add
+  `static_assert(NUM_CHAINS <= REMAP_SLOT_CHAIN, "...")`. `applyRemaps()` selects the live vs
+  const source at compile time; HW and SPI-flash builds are unaffected.
 
 - **1.3.0** — First-boot format now shows a "Preparing Memory" screen with a progress
   bar (the QSPI-flash format blanks the full 8 MB and can take ~1-3 min). A new
