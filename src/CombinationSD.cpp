@@ -27,6 +27,9 @@
 #include "ScanChain.h"
 #include "PersistentConfig.h"
 #include "Debug.h"
+#ifdef ORGANCORE_HAS_REMAP_STORE
+#include "RemapStore.h"       // builder piston-assign store; init after SD is mounted (SD-card media only)
+#endif
 #include "Display.h"          // shared 'ui' for the format progress screen
 #include "DisplayManager.h"   // displayReady, displayForceRepaint
 #include <stdio.h>
@@ -343,6 +346,13 @@ void combinationInit() {
 
     combinationAvailable = true;
     Serial.print("DBG: Combination ready @level "); Serial.println(combinationMemoryLevel);
+
+#ifdef ORGANCORE_HAS_REMAP_STORE
+    // The SD card is now mounted and owned here; load the builder piston-assign
+    // table from the same card. Guarded to SD-card media (the store does not yet
+    // support SPI-flash). Missing REMAP.DAT => const remap defaults stay in effect.
+    remapStoreInit();
+#endif
 }
 
 // ============================================================

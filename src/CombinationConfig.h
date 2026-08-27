@@ -25,6 +25,37 @@
 #define ORGAN_COMBINATION_MEDIA COMBINATION_MEDIA_SD
 #endif
 
+// ---- Builder piston assignment (edit this line, or pass -DORGAN_ENABLE_PISTON_ASSIGN) ----
+// Compile-time enable for the field builder-piston-assignment feature (the SD
+// remap store REMAP.DAT, the touchscreen "Assign Pistons" screen, and boot-time
+// loading of saved assignments; applyRemaps() honors the loaded table).
+//
+//   1 (default) — the feature is compiled in on SD-card local-capture builds
+//                 (it still requires ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD
+//                 and non-SPI-flash media; see ORGANCORE_HAS_REMAP_STORE).
+//   0           — NONE of it is compiled: no store, no screen, no menu entry, no
+//                 REMAP.DAT loading. applyRemaps() uses ONLY the const
+//                 remapFrom[]/remapTo[] from OrganConfig.h. Choose this on
+//                 consoles whose input map is fully defined in config data
+//                 (e.g. Opus 62), where field reassignment is neither needed nor
+//                 wanted — nothing about REMAP.DAT can then affect the build.
+#ifndef ORGAN_ENABLE_PISTON_ASSIGN
+#define ORGAN_ENABLE_PISTON_ASSIGN 1
+#endif
+
+// ---- Derived: is the builder piston-assignment feature compiled in? ----
+// Computed here (not in RemapStore.h) so EVERY file that includes
+// CombinationConfig.h can test it without pulling in RemapStore.h — which lets
+// a disabled build omit the feature's source files entirely. Every piece of the
+// feature keys on this one symbol: the store, the screen, the menu entry, the
+// boot-time load, and the applyRemaps() source selection. It is defined only
+// when local-capture mode, SD-card media, and the enable flag all hold.
+#if (ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD) && \
+    (ORGAN_COMBINATION_MEDIA != COMBINATION_MEDIA_SPIFLASH) && \
+    (ORGAN_ENABLE_PISTON_ASSIGN)
+#define ORGANCORE_HAS_REMAP_STORE 1
+#endif
+
 // ============================================================
 // SD combination file format
 //

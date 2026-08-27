@@ -30,8 +30,12 @@
 #include "StopHandler.h"       // stopCommandedState[]
 #include "PistonHandler.h"     // lastGeneralName, generalDisplayDirty
 #include "Combination.h"       // combinationAvailable/MemoryLevel/ErrorText, combinationMemStep
+#include "CombinationConfig.h" // ORGANCORE_HAS_REMAP_STORE (governs the assign-screen include below)
 #include "Crescendo.h"         // crescendo overlay level + programming screen API
 #include "ExpressionCalScreen.h"
+#ifdef ORGANCORE_HAS_REMAP_STORE
+#include "PistonAssignScreen.h"   // builder piston assignment (only when the feature is compiled in)
+#endif
 #include "TuningConfig.h"
 #if ORGAN_HAS_TUNING
 #include "TuningScreen.h"
@@ -58,7 +62,7 @@ bool    displayReady  = false;                // set true at the end of displayI
 // ------------------------------------------------------------
 static const int SCREEN_W = 320;
 static const int SCREEN_H = 240;
-static const int TITLE_H  = 24;                  // TUI title bar height
+static const int TITLE_H  = 32;                  // TUI title bar height (standard 32px; was mistakenly 24, which slid the band under the bar)
 
 // Only the first 8 screen stops get a tab, in a 4-wide, 2-tall grid.
 static const int NUM_TABS  = 8;
@@ -72,7 +76,7 @@ static const int CFG_BTN_X = SCREEN_W - CFG_BTN_W - 2;
 static const int CFG_BTN_Y = 2;
 
 // Memory control band, just below the title bar.
-static const int MEM_BAND_Y   = TITLE_H + 2;     // 26
+static const int MEM_BAND_Y   = TITLE_H + 2;     // 34 (just below the 32px title bar)
 static const int MEM_BAND_H   = 40;              // 26..66
 static const int MEM_BTN_Y    = MEM_BAND_Y + 4;  // buttons inset in the band
 static const int MEM_BTN_H    = MEM_BAND_H - 8;
@@ -86,11 +90,11 @@ static const int MEM_READ_X   = MEM_M1_X + MEM_BTN_W;        // 108
 static const int MEM_READ_W   = MEM_P1_X - MEM_READ_X;       // 104
 
 // Last-general line, below the memory band.
-static const int GEN_Y = MEM_BAND_Y + MEM_BAND_H + 2;        // 68
-static const int GEN_H = 20;                                 // 68..88
+static const int GEN_Y = MEM_BAND_Y + MEM_BAND_H + 2;        // 76
+static const int GEN_H = 20;                                 // 76..96
 
 // Tab grid fills the rest of the screen.
-static const int GRID_TOP = GEN_Y + GEN_H;                   // 88
+static const int GRID_TOP = GEN_Y + GEN_H;                   // 96
 static const int TAB_GAP  = 3;
 static const int TAB_W    = (SCREEN_W - (GRID_COLS + 1) * TAB_GAP) / GRID_COLS;
 static const int TAB_H    = (SCREEN_H - GRID_TOP - (GRID_ROWS + 1) * TAB_GAP) / GRID_ROWS;
@@ -122,7 +126,7 @@ static uint8_t lastPaintedCrescLevel;      // last painted operational crescendo
 static uint8_t lastPaintedProgLevel;       // last painted programming level
 static bool    crescScreenNeedsFullPaint;
 
-static const int CR_BTN_Y   = 30;
+static const int CR_BTN_Y   = MEM_BAND_Y;   // 34; align with the run-screen memory band, below the 32px title bar (was hardcoded 30, which overlapped it)
 static const int CR_BTN_H   = 40;
 static const int CR_DOWN_X  = 4;
 static const int CR_DOWN_W  = 44;
@@ -275,6 +279,11 @@ static void paintRunScreenFull() {
     ui.drawTitleBar("Op62-MVUMC");
     paintFlatButton(CFG_BTN_X, CFG_BTN_Y, CFG_BTN_W, CFG_BTN_H, "Config");
 
+    // Clear the ENTIRE display space (below the title bar) before painting, so
+    // nothing from the previous screen survives in the gaps between the bands and
+    // tabs or below the last tab row. Everything below is painted on top.
+    ui.lcdDrawFilledRectangle(0, TITLE_H, SCREEN_W, SCREEN_H - TITLE_H, COLOR_STATUS_BG);
+
     ui.lcdDrawFilledRectangle(0, MEM_BAND_Y, SCREEN_W, MEM_BAND_H, COLOR_STATUS_BG);
     paintFlatButton(MEM_M32_X, MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "-32");
     paintFlatButton(MEM_M1_X,  MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "-1");
@@ -316,7 +325,10 @@ static void paintCrescendoScreenFull() {
     ui.drawTitleBar("Crescendo Program");
     paintFlatButton(CFG_BTN_X, CFG_BTN_Y, CFG_BTN_W, CFG_BTN_H, "Done");
 
-    ui.lcdDrawFilledRectangle(0, MEM_BAND_Y, SCREEN_W, GRID_TOP - MEM_BAND_Y, COLOR_STATUS_BG);
+    // Clear the ENTIRE display space before painting, so neither the config
+    // menu's text nor any prior screen survives in the gaps between the control
+    // band and tabs (or in the TAB_GAP margins between/around tabs).
+    ui.lcdDrawFilledRectangle(0, TITLE_H, SCREEN_W, SCREEN_H - TITLE_H, COLOR_STATUS_BG);
     paintFlatButton(CR_DOWN_X, CR_BTN_Y, CR_DOWN_W, CR_BTN_H, "-");
     paintFlatButton(CR_UP_X,   CR_BTN_Y, CR_UP_W,   CR_BTN_H, "+");
     paintFlatButton(CR_SET_X,  CR_BTN_Y, CR_SET_W,  CR_BTN_H, "SET");
@@ -376,19 +388,35 @@ static void runConfigScreen() {
         ui.drawTitleBar("Configuration");
         ui.clearDisplaySpace();
 
+        // Entries stacked from the TOP of the display space. TUI buttons are
+        // center-anchored, so a button's top edge is centerY - height/2; anchor
+        // the first center at displaySpaceTopY + margin + height/2 so it clears
+        // the title bar. The count varies with compile-time features (piston
+        // assign, tuning) without overlapping.
+        const int btnH = 32;
+        int   row = 0;
+        auto  rowY = [&](int n) { return ui.displaySpaceTopY + 6 + btnH / 2 + n * (btnH + 6); };
+
         BUTTON calBtn   = { "Expression Calibration",
-                            ui.displaySpaceCenterX, ui.displaySpaceCenterY - 72, 260, 40 };
+                            ui.displaySpaceCenterX, rowY(row++), 260, btnH };
+        ui.drawButton(calBtn);
+
         BUTTON crescBtn = { "Crescendo Program",
-                            ui.displaySpaceCenterX, ui.displaySpaceCenterY - 24, 260, 40 };
+                            ui.displaySpaceCenterX, rowY(row++), 260, btnH };
+        ui.drawButton(crescBtn);
+
+#ifdef ORGANCORE_HAS_REMAP_STORE
+        BUTTON assignBtn = { "Assign Pistons",
+                             ui.displaySpaceCenterX, rowY(row++), 260, btnH };
+        ui.drawButton(assignBtn);
+#endif
 #if ORGAN_HAS_TUNING
         BUTTON tuneBtn  = { "Tuning / Temperature",
-                            ui.displaySpaceCenterX, ui.displaySpaceCenterY + 24, 260, 40 };
+                            ui.displaySpaceCenterX, rowY(row++), 260, btnH };
         ui.drawButton(tuneBtn);
 #endif
         BUTTON backBtn  = { "Back",
-                            ui.displaySpaceCenterX, ui.displaySpaceCenterY + 72, 160, 36 };
-        ui.drawButton(calBtn);
-        ui.drawButton(crescBtn);
+                            ui.displaySpaceCenterX, rowY(row++), 160, btnH };
         ui.drawButton(backBtn);
 
         bool leaveMenu = false;
@@ -405,6 +433,12 @@ static void runConfigScreen() {
                 currentScreen = SCREEN_CRESCENDO;
                 return;
             }
+#ifdef ORGANCORE_HAS_REMAP_STORE
+            if (ui.checkForButtonClicked(assignBtn)) {
+                pistonAssignScreenRun();     // blocking; returns here on Save/Cancel
+                break;                        // redraw this menu
+            }
+#endif
 #if ORGAN_HAS_TUNING
             if (ui.checkForButtonClicked(tuneBtn)) {
                 tuningScreenRun();           // blocking; returns here on Back
