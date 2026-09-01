@@ -28,6 +28,13 @@ extern const uint32_t SYNC_SETTLE_US;
 extern const uint32_t SAM_PULSE_MS;
 extern const uint32_t MILLIS_ROLLOVER_GUARD_MS;
 
+// Stop-contact settling window. A lamp driver switching can couple into that
+// stop's own sense line, so a lamp that just changed may fake a contact
+// closure on the next scan and toggle the stop straight back off.
+// processStopInputs() ignores stop contact edges for this long after any
+// commanded stop change. Set 0 on a console with no observed coupling.
+extern const uint32_t STOP_INPUT_SETTLE_MS;
+
 // ---- Chains ----
 extern const uint8_t  chainDataInPin[];
 extern const uint8_t  chainDataOutPin[];
@@ -78,7 +85,13 @@ extern const uint16_t SAM_RETRY_PULSE_INCREMENT_MS;
 // to the global stop index. NUM_SCREEN_STOPS entries.
 extern const uint8_t     NUM_SCREEN_STOPS;
 extern const uint16_t    screenStopIndex[];   // global stop index for each tab
-extern const char* const screenStopName[];    // label painted on each tab
+extern const char* const screenStopName[];    // label painted on each tab — first line
+// Second and third label lines, painted under screenStopName[] and centred
+// independently of it. A null or empty string omits that line entirely, and the
+// lines that remain are centred in the tab as a block, so a console with
+// one-line names looks exactly as it did before these were added.
+extern const char* const screenStopNameLine2[];
+extern const char* const screenStopNameLine3[];
 
 // ---- Keyboards ----
 extern const uint8_t  kbdChain[];

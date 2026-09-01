@@ -30,6 +30,15 @@ uint8_t numActiveCoils = 0;
 // with no crescendo are unaffected. Never suppresses SAM sense reporting.
 bool stopEngineSuppressed = false;
 
+// Lamp-to-sense settling. On a console where the lamp drive couples into that
+// stop's own sense line, a lamp that has just changed can fake a contact
+// closure on the next scan, which processStopInputs() would read as a real
+// draw and toggle the stop straight back off. Every commanded stop change
+// (recall, cancel, engine-driven) stamps this forward by
+// STOP_INPUT_SETTLE_MS; stop contact edges are ignored until it expires.
+// STOP_INPUT_SETTLE_MS = 0 leaves the check permanently inert.
+static uint32_t stopInputSettleUntil = 0;
+
 // ============================================================
 // Retry Tracking (per stop)
 // ============================================================
@@ -160,6 +169,10 @@ void processStopInputs() {
             bool physicalState = getSenseState(i);
             sendStopMidi(i, physicalState);
         } else {
+            // A lamp that just changed can couple into its own sense line and
+            // look exactly like a contact closure. Ignore edges while settling.
+            if ((int32_t)(millis() - stopInputSettleUntil) < 0) continue;
+
             bool currentInput = readInput(stopSenseAddr[i]);
             bool prevInput = readInputPrev(stopSenseAddr[i]);
             if (currentInput && !prevInput) {
@@ -181,6 +194,7 @@ void stopSetState(uint16_t stopIndex, bool on) {
     uint8_t i = (uint8_t)stopIndex;
 
     stopCommandedState[i] = on;
+    stopInputSettleUntil = millis() + STOP_INPUT_SETTLE_MS;
 
     if (isSAMStop(i)) {
         // SAM: fire the coil only if physical sense disagrees. The sense change
@@ -208,6 +222,7 @@ void onStopMidiReceived(uint8_t channel, uint8_t note, bool on) {
 
     uint8_t i = (uint8_t)idx;
     stopCommandedState[i] = on;
+    stopInputSettleUntil = millis() + STOP_INPUT_SETTLE_MS;
 
     if (isSAMStop(i)) {
         bool physicalState = getSenseState(i);

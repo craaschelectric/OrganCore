@@ -9,10 +9,13 @@
 //     pistons never write lastGeneralName, so only generals show here; GC clears
 //     it. When the combination card is unavailable, the error text shows here in
 //     yellow instead.
-//   - An 4x2 grid of the first 8 screen-stop tabs (names from screenStopName[]).
-//     Tabs paint from stopCommandedState[] so a lamp follows the actual stop
-//     state. A tab touch writes the stop's virtual chain-3 input bit; the tested
-//     processStopInputs() path then does the toggle + MIDI on the next scan.
+//   - An 4x2 grid of the first 8 screen-stop tabs. Each tab label is up to three
+//     lines, taken from screenStopName[] / screenStopNameLine2[] /
+//     screenStopNameLine3[] and centred independently, so the strings need no
+//     padding spaces. Tabs paint from stopCommandedState[] so a lamp follows the
+//     actual stop state. A tab touch writes the stop's virtual chain-3 input bit;
+//     the tested processStopInputs() path then does the toggle + MIDI on the next
+//     scan.
 //
 // Only 8 tabs are drawn/handled even though NUM_SCREEN_STOPS is larger; the
 // remaining screen stops still exist in the config, they just have no touch tab.
@@ -96,6 +99,7 @@ static const int GEN_H = 20;                                 // 76..96
 // Tab grid fills the rest of the screen.
 static const int GRID_TOP = GEN_Y + GEN_H;                   // 96
 static const int TAB_GAP  = 3;
+static const int TAB_LINE_GAP = 2;   // vertical space between tab label lines
 static const int TAB_W    = (SCREEN_W - (GRID_COLS + 1) * TAB_GAP) / GRID_COLS;
 static const int TAB_H    = (SCREEN_H - GRID_TOP - (GRID_ROWS + 1) * TAB_GAP) / GRID_ROWS;
 
@@ -172,9 +176,37 @@ static void paintTab(uint8_t t) {
 
     ui.lcdSetFont(Arial_9_Bold);
     ui.lcdSetFontColor(txt);
-    int textY = y + (h - ui.lcdGetFontHeightWithoutDecenders()) / 2;
-    ui.lcdSetCursorXY(x + w / 2, textY);
-    ui.lcdPrintCentered((char*)screenStopName[t]);
+
+    // Up to three label lines, each centred on its own so no padding spaces are
+    // needed in the strings. Empty or null lines are skipped and the remaining
+    // lines are centred in the tab as a block, so a one-line name sits exactly
+    // where it always did.
+    const char* labelLine1 = screenStopName[t];
+    const char* labelLine2 = screenStopNameLine2[t];
+    const char* labelLine3 = screenStopNameLine3[t];
+
+    int lineHeight = ui.lcdGetFontHeightWithoutDecenders() + TAB_LINE_GAP;
+    int lineCount = 0;
+    if (labelLine1 && labelLine1[0]) lineCount++;
+    if (labelLine2 && labelLine2[0]) lineCount++;
+    if (labelLine3 && labelLine3[0]) lineCount++;
+
+    int lineY = y + (h - (lineCount * lineHeight - TAB_LINE_GAP)) / 2;
+
+    if (labelLine1 && labelLine1[0]) {
+        ui.lcdSetCursorXY(x + w / 2, lineY);
+        ui.lcdPrintCentered((char*)labelLine1);
+        lineY += lineHeight;
+    }
+    if (labelLine2 && labelLine2[0]) {
+        ui.lcdSetCursorXY(x + w / 2, lineY);
+        ui.lcdPrintCentered((char*)labelLine2);
+        lineY += lineHeight;
+    }
+    if (labelLine3 && labelLine3[0]) {
+        ui.lcdSetCursorXY(x + w / 2, lineY);
+        ui.lcdPrintCentered((char*)labelLine3);
+    }
 
     lastTabOn[t] = on;
 }
