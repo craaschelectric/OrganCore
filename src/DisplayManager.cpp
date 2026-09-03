@@ -17,8 +17,9 @@
 //     the tested processStopInputs() path then does the toggle + MIDI on the next
 //     scan.
 //
-// Only 8 tabs are drawn/handled even though NUM_SCREEN_STOPS is larger; the
-// remaining screen stops still exist in the config, they just have no touch tab.
+// At most 8 tabs are drawn/handled: if NUM_SCREEN_STOPS is larger the remaining
+// screen stops still exist in the config, they just have no touch tab; if it is
+// zero the grid is left empty and the run screen is memory status only.
 //
 // Config screen: a small blocking menu (Calibration + Back), room to grow. While
 // it is open, currentScreen == SCREEN_CONFIG and displayScanChainsActive()
@@ -67,10 +68,15 @@ static const int SCREEN_W = 320;
 static const int SCREEN_H = 240;
 static const int TITLE_H  = 32;                  // TUI title bar height (standard 32px; was mistakenly 24, which slid the band under the bar)
 
-// Only the first 8 screen stops get a tab, in a 4-wide, 2-tall grid.
-static const int NUM_TABS  = 8;
+// Up to 8 screen stops get a tab, in a 4-wide, 2-tall grid. A console with no
+// screen stops at all (NUM_SCREEN_STOPS == 0 -- e.g. one whose stops live on
+// the sample engine's own touch page) draws no tabs and never reads
+// screenStopIndex[] / screenStopName[], which it then need not populate.
+// numTabs is set once in displayInit(); MAX_TABS bounds the grid geometry.
+static const int MAX_TABS  = 8;
 static const int GRID_COLS = 4;
 static const int GRID_ROWS = 2;
+static uint8_t   numTabs   = 0;
 
 // Config button: a tappable rect at the right end of the title bar.
 static const int CFG_BTN_W = 60;
@@ -150,7 +156,7 @@ static bool tabBitPendingClear[MAX_STOPS];
 // Small helpers (multi-call: used by both full and reactive repaint)
 // ------------------------------------------------------------
 
-// Geometry of tab t (0..NUM_TABS-1) in row-major order.
+// Geometry of tab t (0..numTabs-1) in row-major order.
 static void tabRect(uint8_t t, int& x, int& y, int& w, int& h) {
     int col = t % GRID_COLS;
     int row = t / GRID_COLS;
@@ -217,7 +223,7 @@ static void paintTab(uint8_t t) {
 
 // Clear any virtual bit set on the previous tap (one clean rising edge per tap).
 static void retireTabBits() {
-    for (uint8_t t = 0; t < NUM_TABS; t++) {
+    for (uint8_t t = 0; t < numTabs; t++) {
         if (tabBitPendingClear[t]) {
             uint16_t addr = stopSenseAddr[screenStopIndex[t]];
             inputBuffer[ADDR_CHAIN(addr)][ADDR_WORD(addr)] &= ~(1 << ADDR_BIT(addr));
@@ -229,7 +235,7 @@ static void retireTabBits() {
 // A release inside a tab writes that stop's virtual chain-3 input bit for one
 // scan; processStopInputs() sees the edge and toggles + sends MIDI.
 static bool processTabTouch() {
-    for (uint8_t t = 0; t < NUM_TABS; t++) {
+    for (uint8_t t = 0; t < numTabs; t++) {
         int x, y, w, h;
         tabRect(t, x, y, w, h);
         if (ui.checkForTouchEventInRect(TOUCH_RELEASED_EVENT, x, y, x + w, y + h)) {
@@ -244,7 +250,7 @@ static bool processTabTouch() {
 
 // Repaint any tab whose lamp (commanded) state changed.
 static void repaintChangedTabs() {
-    for (uint8_t t = 0; t < NUM_TABS; t++) {
+    for (uint8_t t = 0; t < numTabs; t++) {
         uint16_t stopIdx = screenStopIndex[t];
         if (stopCommandedState[stopIdx] != lastTabOn[t]) {
             paintTab(t);
@@ -325,7 +331,7 @@ static void paintRunScreenFull() {
 
     paintGeneralLine();
 
-    for (uint8_t t = 0; t < NUM_TABS; t++) {
+    for (uint8_t t = 0; t < numTabs; t++) {
         paintTab(t);
     }
     runScreenNeedsFullPaint = false;
@@ -366,7 +372,7 @@ static void paintCrescendoScreenFull() {
     paintFlatButton(CR_SET_X,  CR_BTN_Y, CR_SET_W,  CR_BTN_H, "SET");
     paintCrescLevel();
 
-    for (uint8_t t = 0; t < NUM_TABS; t++) paintTab(t);
+    for (uint8_t t = 0; t < numTabs; t++) paintTab(t);
     crescScreenNeedsFullPaint = false;
 }
 
@@ -518,6 +524,8 @@ void displayInit() {
     COLOR_STATUS_BG    = LCD_BLACK;
     COLOR_STATUS_TEXT  = LCD_WHITE;
     COLOR_ERROR_TEXT   = LCD_YELLOW;
+
+    numTabs = (NUM_SCREEN_STOPS < MAX_TABS) ? NUM_SCREEN_STOPS : (uint8_t)MAX_TABS;
 
     for (uint16_t i = 0; i < MAX_STOPS; i++) {
         lastTabOn[i] = false;
