@@ -65,6 +65,22 @@ extern const uint8_t  VIRTUAL_CHAIN_MIDI_CH;
 extern const uint8_t  VIRTUAL_CHAIN_BASE_NOTE;
 extern const uint8_t  VIRTUAL_CHAIN_MAX_NOTE;
 
+// ---- Combination action ----
+// Where the combination file lives: the SD card (false) or the Teensy 4.1
+// on-board QSPI flash via LittleFS (true). The file layout is byte-for-byte
+// identical on both; only the medium changes. Both back-ends are always
+// compiled and the choice is made when the card is mounted. CRESC.DAT and
+// REMAP.DAT stay on the SD card either way, so a flash-media console gets no
+// crescendo file and no builder piston assignment.
+extern const bool     COMBINATION_USE_SPIFLASH;
+
+// Does this console offer field builder piston assignment -- the "Assign
+// Pistons" config screen and the REMAP.DAT store that overrides the const
+// remapFrom[]/remapTo[]? False on a console whose input map is fully defined in
+// config data, which is the usual case: no menu entry, no REMAP.DAT loaded, and
+// applyRemaps() uses only the const arrays.
+extern const bool     PISTON_ASSIGN_ENABLED;
+
 // ---- Stops ----
 extern const uint16_t stopSenseAddr[];
 extern const uint16_t stopOnCoilAddr[];

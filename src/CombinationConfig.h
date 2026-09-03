@@ -1,9 +1,18 @@
 // CombinationConfig.h  -  combination back-end selection + SD file format.
 //
-// The library is compiled separately from the sketch, so the sketch's Config.h
-// cannot reach these translation units. The back-end is therefore selected
-// here (or by a -DORGAN_COMBINATION_MODE=... build flag, which wins because of
-// the #ifndef). Exactly one back-end compiles; there is no runtime dispatch.
+// ORGAN_COMBINATION_MODE is the LAST compile-time switch in this library, and it
+// is here because it has to be, not to save space. PistonHandler.cpp (Hauptwerk
+// owns the combination action) and CombinationSD.cpp (we do) DEFINE THE SAME
+// SYMBOLS -- processPistons(), pistonInit(), combinationAvailable, setHeld,
+// sequencerPosition. Compiling both would be a duplicate-symbol link error, so
+// exactly one back-end builds and there is no runtime dispatch. It is exclusive
+// by construction.
+//
+// In practice nobody edits it: local-SD is the default and every current console
+// uses it. Everything else that used to live here -- the storage medium and the
+// builder piston-assignment enable -- is now ordinary instrument config in
+// OrganConfig.h (COMBINATION_USE_SPIFLASH, PISTON_ASSIGN_ENABLED), decided at run
+// time. A library header should never need editing to move between consoles.
 #ifndef ORGANCORE_COMBINATIONCONFIG_H
 #define ORGANCORE_COMBINATIONCONFIG_H
 
@@ -14,45 +23,13 @@
 #define ORGAN_COMBINATION_MODE COMBINATION_MODE_SD
 #endif
 
-// ---- Storage medium (edit this line, or pass -DORGAN_COMBINATION_MEDIA) ----
-// Where the combination file lives: the SD card, or the Teensy 4.1 on-board
-// QSPI flash (soldered to the back-side pads) via LittleFS. The file layout is
-// byte-for-byte identical on both; only the medium changes. Assumes a 16 MB
-// (128 Mbit) flash part, which holds the full 8 MB file with room to spare.
-#define COMBINATION_MEDIA_SD       0
-#define COMBINATION_MEDIA_SPIFLASH 1
-#ifndef ORGAN_COMBINATION_MEDIA
-#define ORGAN_COMBINATION_MEDIA COMBINATION_MEDIA_SD
-#endif
-
-// ---- Builder piston assignment (edit this line, or pass -DORGAN_ENABLE_PISTON_ASSIGN) ----
-// Compile-time enable for the field builder-piston-assignment feature (the SD
-// remap store REMAP.DAT, the touchscreen "Assign Pistons" screen, and boot-time
-// loading of saved assignments; applyRemaps() honors the loaded table).
-//
-//   1 (default) — the feature is compiled in on SD-card local-capture builds
-//                 (it still requires ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD
-//                 and non-SPI-flash media; see ORGANCORE_HAS_REMAP_STORE).
-//   0           — NONE of it is compiled: no store, no screen, no menu entry, no
-//                 REMAP.DAT loading. applyRemaps() uses ONLY the const
-//                 remapFrom[]/remapTo[] from OrganConfig.h. Choose this on
-//                 consoles whose input map is fully defined in config data
-//                 (e.g. Opus 62), where field reassignment is neither needed nor
-//                 wanted — nothing about REMAP.DAT can then affect the build.
-#ifndef ORGAN_ENABLE_PISTON_ASSIGN
-#define ORGAN_ENABLE_PISTON_ASSIGN 1
-#endif
-
-// ---- Derived: is the builder piston-assignment feature compiled in? ----
-// Computed here (not in RemapStore.h) so EVERY file that includes
-// CombinationConfig.h can test it without pulling in RemapStore.h — which lets
-// a disabled build omit the feature's source files entirely. Every piece of the
-// feature keys on this one symbol: the store, the screen, the menu entry, the
-// boot-time load, and the applyRemaps() source selection. It is defined only
-// when local-capture mode, SD-card media, and the enable flag all hold.
-#if (ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD) && \
-    (ORGAN_COMBINATION_MEDIA != COMBINATION_MEDIA_SPIFLASH) && \
-    (ORGAN_ENABLE_PISTON_ASSIGN)
+// ---- Derived: is the builder piston-assignment CODE compiled in? ----
+// The store, the assign screen and the boot-time REMAP.DAT load exist only in
+// local-capture mode -- in HW mode there is no SD card and Hauptwerk owns the
+// combination action, so they have nothing to attach to. That is the only
+// condition now: whether a given console OFFERS the feature is
+// PISTON_ASSIGN_ENABLED in its config data, checked at run time.
+#if ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD
 #define ORGANCORE_HAS_REMAP_STORE 1
 #endif
 
