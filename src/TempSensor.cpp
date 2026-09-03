@@ -9,8 +9,6 @@
 #include <stdlib.h>   // atof
 #include <math.h>     // lround
 
-#if ORGAN_HAS_TUNING
-
 static HardwareSerial* tempPort = nullptr;
 static char    lineBuf[16];
 static uint8_t lineLen = 0;
@@ -18,6 +16,7 @@ static float   currentDegC      = 0.0f;   // set to TEMP_REFERENCE_DEGC in tempS
 static int     currentCentOffset = 0;
 
 void tempSensorAttach(HardwareSerial& port) {
+    if (!ORGAN_TUNING_PRESENT) return;   // no pipes on this console
     tempPort = &port;        // sketch already called begin() on the shared Serial8
     currentDegC = TEMP_REFERENCE_DEGC;   // runtime init avoids static-init-order across TUs
 }
@@ -79,4 +78,3 @@ void tempSensorPoll() {
 int   getTempOffsetCents() { return currentCentOffset; }
 float getTempDegC()        { return currentDegC; }
 
-#endif // ORGAN_HAS_TUNING

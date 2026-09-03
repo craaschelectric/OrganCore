@@ -15,11 +15,12 @@
 #include "ScanChain.h"
 
 // Enable/disable debug output at compile time. Default ON (1) so debug
-// output "just works" for anyone who doesn't override it. Per-instrument
-// override belongs in that sketch's build flags (e.g. platform.local.txt
-// build.extra_flags -DDEBUG_ENABLED=0), same pattern as ORGAN_HAS_TUNING --
-// this can't come from Config.h/ConfigData.cpp because the Arduino IDE
-// compiles the library separately from the sketch.
+// output "just works" for anyone who doesn't override it. This is a genuine
+// code-elimination gate -- the prints and their format strings have to not
+// exist -- so it stays a macro and can't come from Config.h/ConfigData.h: the
+// Arduino IDE compiles the library separately from the sketch. Override it with
+// a build flag (platform.local.txt build.extra_flags -DDEBUG_ENABLED=0), noting
+// that such flags are global to the machine, not per sketch.
 #ifndef DEBUG_ENABLED
 #define DEBUG_ENABLED 1
 #endif

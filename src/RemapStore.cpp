@@ -6,11 +6,12 @@
 //
 // File format is documented in RemapStore.h.
 
-#include "RemapStore.h"   // defines ORGANCORE_HAS_REMAP_STORE from the compound guard
+#include "RemapStore.h"   // brings in ORGANCORE_HAS_REMAP_STORE
 
-// The whole store keys on the one symbol RemapStore.h computes (local-capture +
-// SD-card media + ORGAN_ENABLE_PISTON_ASSIGN). When it's undefined, this file is
-// empty and applyRemaps() falls back to the const remap arrays.
+// The store exists only in local-capture (SD) mode; in HW mode this file is
+// empty. Whether a console offers the feature is PISTON_ASSIGN_ENABLED, checked
+// at run time by the caller: when false, remapStoreInit() is never called and
+// applyRemaps() stays on the const remap arrays.
 #ifdef ORGANCORE_HAS_REMAP_STORE
 
 #include "Debug.h"

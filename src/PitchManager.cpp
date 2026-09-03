@@ -8,8 +8,6 @@
 #include <EEPROM.h>
 #include <math.h>
 
-#if ORGAN_HAS_TUNING
-
 // ---- Persistence ----
 static int eepromManualOffsetAddr = -1;   // set by pitchManagerInit()
 
@@ -120,6 +118,7 @@ static void recalcAndApply() {
 // Public
 // ------------------------------------------------------------
 void pitchManagerInit(int addr) {
+    if (!ORGAN_TUNING_PRESENT) return;   // no pipes on this console
     eepromManualOffsetAddr = addr;
 }
 
@@ -234,4 +233,3 @@ float getTargetFrequencyHz() {
     return PITCH_A_REFERENCE_HZ * powf(2.0f, (float)totalTargetCents / 1200.0f);
 }
 
-#endif // ORGAN_HAS_TUNING

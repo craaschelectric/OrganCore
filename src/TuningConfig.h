@@ -1,29 +1,35 @@
 // TuningConfig.h
-// The ONE compile-time knob for the pitch/temperature subsystem, plus the
-// instrument-config contract for it.
+// The instrument-config contract for the pitch/temperature subsystem.
 //
-// ORGAN_HAS_TUNING gates the whole subsystem as a code-elimination switch: when
-// 0, none of the tuning code compiles or links and a pipeless console carries
-// zero tuning weight (the common case). Because the Arduino IDE compiles the
-// library separately from the sketch, this gate has to live in a library header
-// rather than the sketch's Config.h -- same constraint as CombinationConfig.h.
-// It is the only tuning value that does; everything else that used to sit here
-// is now instrument config, supplied by the sketch's ConfigData.cpp through the
-// extern contract below (like exprAnalogPin[] / displayLineLCD[] in
-// OrganConfig.h). Set ORGAN_HAS_TUNING to 1 for a pipe instrument and define the
-// contract in that instrument's ConfigData.cpp.
+// There is no compile-time gate here any more. ORGAN_HAS_TUNING used to be a
+// code-elimination switch living in this header, which meant a builder with
+// several consoles in flight had to edit a LIBRARY file to move between them --
+// the library stopped being common. Arduino build flags can't fix that either:
+// platform.local.txt is global to the machine, not per sketch.
+//
+// So the tuning code now always compiles, and whether a console HAS pipes is an
+// ordinary contract value like every other per-instrument fact:
+// ORGAN_TUNING_PRESENT. A pipeless console sets it false, never calls
+// pitchManagerInit() or tempSensorAttach(), and gets no "Tuning / Temperature"
+// entry in the config menu. It carries the tuning code as dead flash -- a few KB
+// on a part with eight megabytes -- and nothing else.
+//
+// A pipeless sketch does not have to write out the whole contract below by hand:
+// include <TuningDefaults.h> once from its ConfigData.h and every symbol here is
+// defined at an inert value.
 
 #ifndef TUNING_CONFIG_H
 #define TUNING_CONFIG_H
 
 #include <Arduino.h>
 
-#ifndef ORGAN_HAS_TUNING
-#define ORGAN_HAS_TUNING 0
-#endif
+// ---- Instrument tuning contract (define these in ConfigData.h/.cpp) ----
 
-#if ORGAN_HAS_TUNING
-// ---- Instrument tuning contract (define these in ConfigData.cpp) ----
+// Does this console have pipes to keep in tune? False disables the tuning
+// screen's menu entry and makes pitchManagerInit() / tempSensorAttach() no-ops,
+// so a stray call can't arm anything.
+extern const bool     ORGAN_TUNING_PRESENT;
+
 // Transport selection: pulse-feedback keeps GrandOrgue the source of truth;
 // the MTS SysEx is the open-loop Hauptwerk path. Either or both may be on.
 extern const bool     PITCH_PULSE_ENABLED;       // GrandOrgue feedback loop
@@ -47,6 +53,5 @@ extern const uint16_t PITCH_PULSE_TIMEOUT_MS;    // no-response retry window
 // from the displayLineLCD[] values so the report isn't taken for a status line;
 // SysExParser routes a match here to pitchManagerOnReportedOffset().
 extern const uint8_t  PITCH_SYSEX_LCD_NUM;
-#endif // ORGAN_HAS_TUNING
 
 #endif // TUNING_CONFIG_H

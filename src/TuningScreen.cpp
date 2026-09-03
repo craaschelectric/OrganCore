@@ -21,8 +21,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#if ORGAN_HAS_TUNING
-
 void tuningScreenRun() {
     ui.drawTitleBar("Tuning / Temperature");
     ui.clearDisplaySpace();
@@ -81,4 +79,3 @@ void tuningScreenRun() {
     }
 }
 
-#endif // ORGAN_HAS_TUNING

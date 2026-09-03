@@ -32,9 +32,12 @@
 
 #include "CombinationConfig.h"
 
-// ORGANCORE_HAS_REMAP_STORE is computed in CombinationConfig.h (local-capture +
-// SD-card media + ORGAN_ENABLE_PISTON_ASSIGN). When it is undefined the feature
-// is off: this header declares nothing and applyRemaps() uses the const arrays.
+// ORGANCORE_HAS_REMAP_STORE is computed in CombinationConfig.h and means only
+// that the combination action is local (SD mode) -- in HW mode there is no card
+// to attach to and this header declares nothing. Whether a console OFFERS field
+// piston assignment is PISTON_ASSIGN_ENABLED in its config data: when false,
+// remapStoreInit() is never called, remapLiveLoaded stays false, and
+// applyRemaps() uses the const arrays.
 #ifdef ORGANCORE_HAS_REMAP_STORE
 
 #include "OrganCore.h"

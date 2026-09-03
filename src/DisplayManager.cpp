@@ -41,9 +41,7 @@
 #include "PistonAssignScreen.h"   // builder piston assignment (only when the feature is compiled in)
 #endif
 #include "TuningConfig.h"
-#if ORGAN_HAS_TUNING
 #include "TuningScreen.h"
-#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -444,15 +442,25 @@ static void runConfigScreen() {
         ui.drawButton(crescBtn);
 
 #ifdef ORGANCORE_HAS_REMAP_STORE
-        BUTTON assignBtn = { "Assign Pistons",
-                             ui.displaySpaceCenterX, rowY(row++), 260, btnH };
-        ui.drawButton(assignBtn);
+        // Same rule as the tuning entry: whether this console offers builder
+        // piston assignment is instrument config, so the row appears or doesn't
+        // and everything below it shifts up.
+        BUTTON assignBtn = { "Assign Pistons", 0, 0, 0, 0 };
+        if (PISTON_ASSIGN_ENABLED) {
+            assignBtn = BUTTON{ "Assign Pistons",
+                                ui.displaySpaceCenterX, rowY(row++), 260, btnH };
+            ui.drawButton(assignBtn);
+        }
 #endif
-#if ORGAN_HAS_TUNING
-        BUTTON tuneBtn  = { "Tuning / Temperature",
-                            ui.displaySpaceCenterX, rowY(row++), 260, btnH };
-        ui.drawButton(tuneBtn);
-#endif
+        // The tuning entry is instrument config, not a build option: a console
+        // with no pipes simply doesn't get the row, and the entries below it
+        // move up.
+        BUTTON tuneBtn = { "Tuning / Temperature", 0, 0, 0, 0 };
+        if (ORGAN_TUNING_PRESENT) {
+            tuneBtn = BUTTON{ "Tuning / Temperature",
+                              ui.displaySpaceCenterX, rowY(row++), 260, btnH };
+            ui.drawButton(tuneBtn);
+        }
         BUTTON backBtn  = { "Back",
                             ui.displaySpaceCenterX, rowY(row++), 160, btnH };
         ui.drawButton(backBtn);
@@ -472,17 +480,15 @@ static void runConfigScreen() {
                 return;
             }
 #ifdef ORGANCORE_HAS_REMAP_STORE
-            if (ui.checkForButtonClicked(assignBtn)) {
+            if (PISTON_ASSIGN_ENABLED && ui.checkForButtonClicked(assignBtn)) {
                 pistonAssignScreenRun();     // blocking; returns here on Save/Cancel
                 break;                        // redraw this menu
             }
 #endif
-#if ORGAN_HAS_TUNING
-            if (ui.checkForButtonClicked(tuneBtn)) {
+            if (ORGAN_TUNING_PRESENT && ui.checkForButtonClicked(tuneBtn)) {
                 tuningScreenRun();           // blocking; returns here on Back
                 break;                       // redraw this menu
             }
-#endif
             if (ui.checkForButtonClicked(backBtn)) {
                 leaveMenu = true;
             }

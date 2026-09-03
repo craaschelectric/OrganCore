@@ -5,11 +5,9 @@
 #include "Debug.h"
 #include "TuningConfig.h"
 #include <string.h>
-#if ORGAN_HAS_TUNING
 #include "PitchManager.h"
 #include <stdlib.h>   // atof
 #include <math.h>     // lround
-#endif
 
 char displayLineText[MAX_DISPLAY_LINES][32];
 bool displayDirty = false;
@@ -37,12 +35,11 @@ bool parseSysEx(const uint8_t *data, uint16_t length) {
     uint8_t lcdNum = data[3];
     bool matched = false;
 
-#if ORGAN_HAS_TUNING
     // GrandOrgue pitch report (pulse-feedback mode): the ASCII payload on
     // PITCH_SYSEX_LCD_NUM is a cents value like "1.0 cent" or "-2.0 cent". Parse
     // it and feed the pitch manager. PITCH_SYSEX_LCD_NUM must be distinct from
     // the displayLineLCD[] values so this isn't taken for a status line.
-    if (PITCH_PULSE_ENABLED && lcdNum == PITCH_SYSEX_LCD_NUM) {
+    if (ORGAN_TUNING_PRESENT && PITCH_PULSE_ENABLED && lcdNum == PITCH_SYSEX_LCD_NUM) {
         const uint8_t off = 5;                   // ASCII start (after 7D 01 00 lcd 00)
         if (off < length) {
             uint16_t n = length - off;
@@ -63,7 +60,6 @@ bool parseSysEx(const uint8_t *data, uint16_t length) {
         }
         return matched;   // pitch LCD is not a display line; done
     }
-#endif
 
     // Check each display line config to see if this LCD number matches
     for (uint8_t line = 0; line < NUM_DISPLAY_LINES; line++) {
