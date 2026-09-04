@@ -1,5 +1,7 @@
 // CombinationSD.cpp  -  local combination back-end (SD card or on-board QSPI flash).
 //
+// The medium is mounted by OrganStorage (organFS); this file just uses it.
+//
 // Compiled only when ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD. This file
 // provides the SD combination API AND the piston processing (pistonInit /
 // processPistons), because in SD mode the Hauptwerk-side PistonHandler.cpp is
@@ -32,23 +34,8 @@
 #endif
 #include "Display.h"          // shared 'ui' for the format progress screen
 #include "DisplayManager.h"   // displayReady, displayForceRepaint
+#include "OrganStorage.h"     // organFS / organStorageMount() — the shared mount
 #include <stdio.h>
-#include <SD.h>
-#include <LittleFS.h>
-
-// Both media are always built; COMBINATION_USE_SPIFLASH picks one at boot.
-// SD (SDClass) and LittleFS_QSPIFlash both derive from FS on the Teensy core, so
-// they share one File type and the exists()/open()/remove() API — the only
-// media-specific call is begin() in combinationInit(). comboFS points at the
-// chosen one and is null until then, so every use is guarded.
-static LittleFS_QSPIFlash comboFlash;   // on-board QSPI flash, Teensy 4.1 back-side pads
-static FS* comboFS = nullptr;
-
-// Chip select for the combination card. Teensy 4.1's built-in socket by default;
-// override with -DCOMBINATION_SD_CS=<pin> for an external SPI card.
-#ifndef COMBINATION_SD_CS
-#define COMBINATION_SD_CS BUILTIN_SDCARD
-#endif
 
 static const char* COMBO_FILENAME = "COMB.DAT";
 
@@ -144,10 +131,10 @@ static void formatProgressDraw(uint8_t percent, bool first) {
 // An all-zero record is a blank piston (all stops off), so no per-record valid
 // flag is needed.
 static bool formatComboFile() {
-    if (!comboFS) return false;
+    if (!organFS) return false;
     comboFile.close();
-    comboFS->remove(COMBO_FILENAME);
-    comboFile = comboFS->open(COMBO_FILENAME, FILE_WRITE);
+    organFS->remove(COMBO_FILENAME);
+    comboFile = organFS->open(COMBO_FILENAME, FILE_WRITE);
     if (!comboFile) return false;
 
     uint8_t h[COMBO_HEADER_SIZE];
@@ -189,10 +176,10 @@ static bool formatComboFile() {
 
 // Open the file for read+write, creating or blanking it as needed.
 static bool openOrCreateComboFile() {
-    if (!comboFS) return false;
-    bool needFormat = !comboFS->exists(COMBO_FILENAME);
+    if (!organFS) return false;
+    bool needFormat = !organFS->exists(COMBO_FILENAME);
 
-    comboFile = comboFS->open(COMBO_FILENAME, FILE_WRITE);   // FILE_WRITE = O_RDWR|O_CREAT
+    comboFile = organFS->open(COMBO_FILENAME, FILE_WRITE);   // FILE_WRITE = O_RDWR|O_CREAT
     if (!comboFile) return false;
 
     if (!needFormat) {
@@ -324,24 +311,13 @@ void combinationInit() {
     combinationAvailable = false;
     combinationErrorText = nullptr;
 
-    comboFS = nullptr;
-    if (COMBINATION_USE_SPIFLASH) {
-        if (!comboFlash.begin()) {
-            combinationErrorText = "SPI FLASH MISSING";
-            Serial.println("DBG: LittleFS QSPI begin failed -> combination disabled");
-            return;
-        }
-        comboFS = &comboFlash;
-    } else {
-        if (!SD.begin(COMBINATION_SD_CS)) {
-            combinationErrorText = "SD CARD MISSING";
-            Serial.println("DBG: SD.begin failed -> combination disabled");
-            return;
-        }
-        comboFS = &SD;
+    if (!organStorageMount()) {
+        combinationErrorText = organStorageError;
+        Serial.println("DBG: storage mount failed -> combination disabled");
+        return;
     }
     if (!openOrCreateComboFile()) {
-        combinationErrorText = "SD FILE ERROR";
+        combinationErrorText = "COMB FILE ERROR";
         Serial.println("DBG: combination file open/create failed -> combination disabled");
         return;
     }
@@ -350,11 +326,10 @@ void combinationInit() {
     Serial.print("DBG: Combination ready @level "); Serial.println(combinationMemoryLevel);
 
 #ifdef ORGANCORE_HAS_REMAP_STORE
-    // The card is now mounted and owned here; if this console offers builder
-    // piston assignment, load the table from the same SD card. REMAP.DAT lives
-    // on SD only, so a flash-media console never loads one. Missing REMAP.DAT
+    // Storage is up; if this console offers builder piston assignment, load the
+    // table from the same medium the combination file uses. Missing REMAP.DAT
     // (or the feature switched off) leaves the const remap defaults in effect.
-    if (PISTON_ASSIGN_ENABLED && !COMBINATION_USE_SPIFLASH) {
+    if (PISTON_ASSIGN_ENABLED) {
         remapStoreInit();
     }
 #endif

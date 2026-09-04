@@ -1,5 +1,6 @@
 // Crescendo.cpp  -  blind crescendo overlay + level programming.
-// See Crescendo.h for the model. Levels live in CRESC.DAT, reusing the
+// See Crescendo.h for the model. CRESC.DAT lives on whichever medium
+// OrganStorage mounted (SD card or QSPI flash), alongside COMB.DAT. Levels reuse the
 // combination record layout (64-byte / 512-stop bitmap, bit i = stop i,
 // LSB-first) with its own header magic "OCRC" and 31 records.
 
@@ -9,13 +10,7 @@
 #include "ScanChain.h"           // readInput / inputChanged (console SET piston)
 #include "ExpressionCalibration.h"
 #include "DisplayManager.h"      // currentScreen
-#include <SD.h>
-
-// Chip select: Teensy 4.1 built-in socket by default (same card the combination
-// file uses); override with -DCRESCENDO_SD_CS=<pin> for an external SPI card.
-#ifndef CRESCENDO_SD_CS
-#define CRESCENDO_SD_CS BUILTIN_SDCARD
-#endif
+#include "OrganStorage.h"        // organFS / organStorageMount() — same medium as COMB.DAT
 
 static const char* CRESC_FILENAME = "CRESC.DAT";
 
@@ -86,9 +81,10 @@ static bool crescValidateHeader() {
 }
 
 static bool crescFormatFile() {
+    if (!organFS) return false;
     crescFile.close();
-    SD.remove(CRESC_FILENAME);
-    crescFile = SD.open(CRESC_FILENAME, FILE_WRITE);
+    organFS->remove(CRESC_FILENAME);
+    crescFile = organFS->open(CRESC_FILENAME, FILE_WRITE);
     if (!crescFile) return false;
 
     uint8_t h[COMBO_HEADER_SIZE];
@@ -112,8 +108,9 @@ static bool crescFormatFile() {
 }
 
 static bool crescOpenOrCreate() {
-    bool needFormat = !SD.exists(CRESC_FILENAME);
-    crescFile = SD.open(CRESC_FILENAME, FILE_WRITE);   // O_RDWR|O_CREAT
+    if (!organFS) return false;
+    bool needFormat = !organFS->exists(CRESC_FILENAME);
+    crescFile = organFS->open(CRESC_FILENAME, FILE_WRITE);   // O_RDWR|O_CREAT
     if (!crescFile) return false;
     if (!needFormat) {
         if (crescFile.size() != crescFileSize() || !crescValidateHeader()) needFormat = true;
@@ -152,8 +149,10 @@ void crescendoInit() {
         if (pistonType[i] == PISTON_TYPE_SET) { setPistonAddr = pistonAddr[i]; break; }
     }
 
-    if (!SD.begin(CRESCENDO_SD_CS)) {
-        Serial.println("DBG: Crescendo SD.begin failed -> crescendo disabled");
+    // Mount is shared and idempotent: whichever of combinationInit() /
+    // crescendoInit() runs first brings the medium up.
+    if (!organStorageMount()) {
+        Serial.println("DBG: Crescendo storage mount failed -> crescendo disabled");
         return;
     }
     if (!crescOpenOrCreate()) {

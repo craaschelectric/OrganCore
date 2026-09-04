@@ -59,8 +59,21 @@ bool    displayReady  = false;                // set true at the end of displayI
 // wiring is sketch data, not a library edit.
 // ------------------------------------------------------------
 
+// The ORIENT_* values in CoreConfig.h are mirrors of TeensyUserInterface's, so
+// a sketch's ConfigData.cpp needn't include the TUI header. Catch any drift here,
+// where both headers are visible.
+static_assert((int)ORIENT_PORTRAIT_4PIN_TOP    == LCD_ORIENTATION_PORTRAIT_4PIN_TOP,
+              "ORIENT_* drifted from TeensyUserInterface's LCD_ORIENTATION_*");
+static_assert((int)ORIENT_LANDSCAPE_4PIN_LEFT  == LCD_ORIENTATION_LANDSCAPE_4PIN_LEFT,
+              "ORIENT_* drifted from TeensyUserInterface's LCD_ORIENTATION_*");
+static_assert((int)ORIENT_PORTRAIT_4PIN_BOTTOM == LCD_ORIENTATION_PORTRAIT_4PIN_BOTTOM,
+              "ORIENT_* drifted from TeensyUserInterface's LCD_ORIENTATION_*");
+static_assert((int)ORIENT_LANDSCAPE_4PIN_RIGHT == LCD_ORIENTATION_LANDSCAPE_4PIN_RIGHT,
+              "ORIENT_* drifted from TeensyUserInterface's LCD_ORIENTATION_*");
+
 // ------------------------------------------------------------
-// Run-screen layout (320x240 landscape)
+// Run-screen layout (320x240 landscape -- both landscape orientations give the
+// same 320x240 space, so TFT_ORIENTATION only changes which way up it reads)
 // ------------------------------------------------------------
 static const int SCREEN_W = 320;
 static const int SCREEN_H = 240;
@@ -518,8 +531,28 @@ void displayInit() {
         digitalWrite(BACKLIGHT_PIN, HIGH);
     }
 
+    // Orientation is instrument config, not a library fact.
     ui.begin(TFT_CS_PIN, TFT_DC_PIN, TOUCH_CS_PIN,
-             LCD_ORIENTATION_LANDSCAPE_4PIN_RIGHT, Arial_9_Bold);
+             (int)TFT_ORIENTATION, Arial_9_Bold);
+
+    // Touch inversion, per axis, on top of that orientation. begin() has just
+    // loaded TUI's touch calibration for TFT_ORIENTATION, which maps a raw
+    // reading as  lcd = raw / scaler - offset. Flipping one axis end-for-end is
+    // therefore a negated scaler and a re-derived offset:
+    //
+    //   (span-1) - (raw/S - O)  ==  raw/(-S) - ( -((span-1) + O) )
+    //
+    // so the axis reverses with no change to TUI and no touch code of our own.
+    // Inverting both axes is exactly a 180-degree touch rotation; inverting one
+    // is the mirror an orientation value could never express.
+    if (TOUCH_INVERT_X) {
+        ui.touchScreenToLCDOffsetX = -((ui.lcdWidth  - 1) + ui.touchScreenToLCDOffsetX);
+        ui.touchScreenToLCDScalerX = -ui.touchScreenToLCDScalerX;
+    }
+    if (TOUCH_INVERT_Y) {
+        ui.touchScreenToLCDOffsetY = -((ui.lcdHeight - 1) + ui.touchScreenToLCDOffsetY);
+        ui.touchScreenToLCDScalerY = -ui.touchScreenToLCDScalerY;
+    }
     ui.setColorPaletteGray();
 
     COLOR_TAB_ON       = ui.lcdMakeColor(6, 40, 10);    // lit green

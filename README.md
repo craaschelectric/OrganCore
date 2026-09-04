@@ -52,10 +52,10 @@ membership) are independent — a stop can be in a division yet excluded from it
 A touchscreen flow (`Config → Assign Pistons`) that lets a builder assign the console's
 pistons and control buttons **in the field, without recompiling**, by parking on a logical
 function and pressing the physical button(s) that should trigger it. Compiled only for
-local-capture on SD-card media (`ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD` and
-`ORGAN_COMBINATION_MEDIA != COMBINATION_MEDIA_SPIFLASH`) **and** when the feature is enabled
-by `ORGAN_ENABLE_PISTON_ASSIGN` (default `1`) — the three together define the guard
-`ORGANCORE_HAS_REMAP_STORE`. Setting `ORGAN_ENABLE_PISTON_ASSIGN 0` in `CombinationConfig.h`
+local-capture mode (`ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD`, which defines the guard
+`ORGANCORE_HAS_REMAP_STORE`); whether a given console *offers* it is the runtime config value
+`PISTON_ASSIGN_ENABLED`. `REMAP.DAT` lives on whichever medium `COMBINATION_USE_SPIFLASH`
+selects, the same one `COMB.DAT` uses. Setting `ORGAN_ENABLE_PISTON_ASSIGN 0` in `CombinationConfig.h`
 (or `-D` on the build) compiles out the whole feature — store, screen, menu entry, and
 REMAP.DAT loading — and `applyRemaps()` uses only the const `remapFrom[]`/`remapTo[]` from
 `OrganConfig.h`. Choose that on consoles whose input map is fully defined in config data
@@ -94,7 +94,7 @@ Presses capture on the rising edge, one per press (per-address release-debounce)
 prints a serial line naming the function and the captured CWB address; the builder sees only the
 function name and a live count of buttons assigned to it.
 
-**Storage.** `REMAP.DAT` on the same card as `COMB.DAT` (magic `OCRM`, versioned, with the slot
+**Storage.** `REMAP.DAT` on the same medium as `COMB.DAT` (magic `OCRM`, versioned, with the slot
 chain and `MAX_REMAPS` cap validated). Loaded by `remapStoreInit()`, called at the end of
 `combinationInit()` once the card is mounted — no new sketch ordering. **A missing file means
 never-calibrated** → the const remap defaults stay in effect; **a valid zero-count file means
@@ -126,7 +126,56 @@ No new engine code — it's configuration:
   every in-scope stop. This is loop-safe by structure: `onStopMidiReceived` never emits, and the
   only emitter (`stopSetState`) is called only by local recall/cancel.
 
+## Documentation
+
+- **[docs/OPERATING-MODES.md](docs/OPERATING-MODES.md)** — every mode axis in one place:
+  combination action, storage medium, per-stop truth model, crescendo, tuning, screen states
+  and orientation, builder piston assignment, chain types, expression types, and a table of
+  which switch is compile-time and which is runtime. Read this before adding a console.
+
 ## Changelog
+
+- **1.7.0** — Two fixes, both "instrument facts don't belong in the library" in the same
+  spirit as 1.6.0.
+
+  **One medium for every file.** `CRESC.DAT` and `REMAP.DAT` were written against the global
+  `SD` object and never converted when 1.2.0 made the medium selectable, so a
+  `COMBINATION_USE_SPIFLASH` console silently lost its crescendo (Crescendo called
+  `SD.begin()` itself and failed with no card) and its builder piston assignment (an explicit
+  `!COMBINATION_USE_SPIFLASH` guard skipped `remapStoreInit()`). The mount moved out of
+  `CombinationSD.cpp` into a new **`OrganStorage`** module that owns `organFS` and an
+  idempotent `organStorageMount()`; Combination, Crescendo and RemapStore all go through it,
+  so all three files follow `COMBINATION_USE_SPIFLASH` together. Together they are about 3 KB
+  next to the 8 MB combination file, so nothing about the flash budget changes. Side effects:
+  the mount is order-independent, so `crescendoInit()` no longer has to follow
+  `combinationInit()`; `CRESCENDO_SD_CS` is gone (`COMBINATION_SD_CS` is the one override);
+  and a HW-mode build now links LittleFS, which it previously didn't. **Existing consoles
+  are on SD, where nothing changes.** A console being *switched* to flash starts with empty
+  files on the new medium — the card's contents are not migrated.
+
+  **Display orientation and touch inversion are config.** `displayInit()` hard-coded one
+  `LCD_ORIENTATION_*` constant for both the glass and the touch layer. The display is now
+  `TFT_ORIENTATION`, a new mirrored `ORIENT_*` value from `CoreConfig.h` (mirrored so a
+  `ConfigData.cpp` needn't include the TUI header; `static_assert`s in `DisplayManager.cpp`
+  catch drift). **Landscape only:** the run screen's layout is fixed 320×240, so use
+  `ORIENT_LANDSCAPE_4PIN_LEFT` / `ORIENT_LANDSCAPE_4PIN_RIGHT`, which differ by exactly the
+  180° flip an inverted mount needs.
+
+  Touch is handled separately by `TOUCH_INVERT_X` / `TOUCH_INVERT_Y`, one flag per axis,
+  applied on top of that orientation. Panels vary in how the touch layer is wired relative to
+  the glass: some are mirrored on one axis, some end-for-end on both. A second orientation
+  value could only ever express the second case — an orientation rotates, and a single-axis
+  mirror is not a rotation of anything. Inverting both axes *is* a 180° touch rotation, so
+  the two flags are strictly more general. Implementation needs no touch code and no TUI
+  change: `ui.begin()` loads TUI's calibration for the display orientation, which maps a raw
+  reading as `lcd = raw / scaler - offset`, and reversing an axis end-for-end is a negated
+  scaler with a re-derived offset, since
+  `(span-1) - (raw/S - O) == raw/(-S) - (-((span-1) + O))`.
+
+  **Sketch migration** (`ConfigData.cpp`): define `TFT_ORIENTATION`, `TOUCH_INVERT_X` and
+  `TOUCH_INVERT_Y`. All three are required — a sketch that omits them fails to link with an
+  undefined reference, which is the failure you want. Drop any `-DCRESCENDO_SD_CS`.
+
 
 - **1.4.0** — **Builder piston assignment** (see the section above): a touchscreen
   `Config → Assign Pistons` flow that funnels builder-pressed physical pistons onto frozen

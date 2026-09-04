@@ -1,8 +1,10 @@
-// RemapStore.cpp  -  SD-backed builder-assignable input remap table.
+// RemapStore.cpp  -  builder-assignable input remap table, stored alongside
+// the combination file.
 //
-// Compiled only in local-capture mode. Shares the combination card: the SD
-// library is already brought up by combinationInit() (SD.begin), so this store
-// must be initialized AFTER combinationInit() and never calls SD.begin itself.
+// Compiled only in local-capture mode. REMAP.DAT lives on whichever medium
+// OrganStorage mounted (SD card or QSPI flash), the same one COMB.DAT uses.
+// remapStoreInit() is called from the end of combinationInit(), by which point
+// the mount is up; it never mounts anything itself.
 //
 // File format is documented in RemapStore.h.
 
@@ -15,12 +17,7 @@
 #ifdef ORGANCORE_HAS_REMAP_STORE
 
 #include "Debug.h"
-#include <SD.h>
-
-// Same card / CS as the combination file (documented default in CombinationSD.cpp).
-#ifndef COMBINATION_SD_CS
-#define COMBINATION_SD_CS BUILTIN_SDCARD
-#endif
+#include "OrganStorage.h"   // organFS — the medium combinationInit() mounted
 
 static const char* REMAP_FILENAME = "REMAP.DAT";
 
@@ -72,8 +69,9 @@ static bool validateHeader(const uint8_t h[REMAP_HEADER_SIZE], uint16_t* countOu
 // ============================================================
 
 static bool writeFile() {
-    SD.remove(REMAP_FILENAME);
-    File f = SD.open(REMAP_FILENAME, FILE_WRITE);   // O_RDWR | O_CREAT
+    if (!organFS) return false;
+    organFS->remove(REMAP_FILENAME);
+    File f = organFS->open(REMAP_FILENAME, FILE_WRITE);   // O_RDWR | O_CREAT
     if (!f) return false;
 
     uint8_t h[REMAP_HEADER_SIZE];
@@ -100,13 +98,18 @@ void remapStoreInit() {
     liveNumRemaps   = 0;
     remapLiveLoaded = false;
 
+    if (!organFS) {
+        Serial.println("DBG: no storage mounted -> using const remap defaults");
+        return;
+    }
+
     // Missing file -> never calibrated: leave live empty, const defaults win.
-    if (!SD.exists(REMAP_FILENAME)) {
+    if (!organFS->exists(REMAP_FILENAME)) {
         Serial.println("DBG: REMAP.DAT absent -> using const remap defaults");
         return;
     }
 
-    File f = SD.open(REMAP_FILENAME, FILE_READ);
+    File f = organFS->open(REMAP_FILENAME, FILE_READ);
     if (!f) {
         Serial.println("DBG: REMAP.DAT open failed -> using const remap defaults");
         return;

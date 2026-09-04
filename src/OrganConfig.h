@@ -66,12 +66,12 @@ extern const uint8_t  VIRTUAL_CHAIN_BASE_NOTE;
 extern const uint8_t  VIRTUAL_CHAIN_MAX_NOTE;
 
 // ---- Combination action ----
-// Where the combination file lives: the SD card (false) or the Teensy 4.1
-// on-board QSPI flash via LittleFS (true). The file layout is byte-for-byte
-// identical on both; only the medium changes. Both back-ends are always
-// compiled and the choice is made when the card is mounted. CRESC.DAT and
-// REMAP.DAT stay on the SD card either way, so a flash-media console gets no
-// crescendo file and no builder piston assignment.
+// Where the console's files live: the SD card (false) or the Teensy 4.1
+// on-board QSPI flash via LittleFS (true). This covers ALL of them -- COMB.DAT,
+// CRESC.DAT and REMAP.DAT -- so a flash console keeps its crescendo and its
+// builder piston assignment (they used to be stranded on the card). Layouts are
+// byte-for-byte identical on both media; only the medium changes. Both are
+// always compiled and the choice is made at mount (see OrganStorage).
 extern const bool     COMBINATION_USE_SPIFLASH;
 
 // Does this console offer field builder piston assignment -- the "Assign
@@ -178,6 +178,25 @@ extern const uint8_t  displayLineLen[];
 extern const uint8_t  TFT_CS_PIN;
 extern const uint8_t  TFT_DC_PIN;
 extern const uint8_t  TOUCH_CS_PIN;
+
+// Display orientation: an ORIENT_* value from CoreConfig.h. The run screen's
+// layout is fixed 320x240 landscape, so use ORIENT_LANDSCAPE_4PIN_LEFT or
+// ORIENT_LANDSCAPE_4PIN_RIGHT -- the two differ by 180 degrees, which is the
+// flip an inverted mount needs and the only display change supported.
+extern const uint8_t  TFT_ORIENTATION;
+
+// Touch inversion, per axis, applied on top of the display orientation. Panels
+// vary in how the touch layer is wired relative to the glass: some are mirrored
+// on one axis, some are end-for-end on both. One flag per axis covers every
+// case -- inverting BOTH is exactly a 180-degree touch rotation, so a panel
+// whose touch layer is simply upside down sets both true. A normal panel sets
+// both false.
+//
+// This is deliberately NOT a second orientation value: an orientation can only
+// rotate, and a single-axis mirror (a real panel fault, see Opus 67) is not a
+// rotation of anything.
+extern const bool     TOUCH_INVERT_X;
+extern const bool     TOUCH_INVERT_Y;
 extern const char* const displayLineLabel[];
 extern const uint8_t  SYSEX_SAVE_LINE_INDEX;
 extern const char     SYSEX_SAVE_TRIGGER[];

@@ -126,6 +126,19 @@ constexpr uint8_t STOP_IN_SFZ         = 0x08;
 constexpr uint8_t STOP_SCREEN         = 0x10;  // no coil/lamp; sense is a touch-fed virtual bit
 constexpr uint8_t STOP_DIVISION_NONE  = 0xFF;
 
+// ---- Display / touch orientation ----
+// Values match TeensyUserInterface's LCD_ORIENTATION_* constants; mirrored here
+// so a sketch's ConfigData.cpp doesn't have to include the TUI header just to
+// name an orientation. DisplayManager.cpp static_asserts that they still agree.
+//
+// The run screen's layout is fixed 320x240 LANDSCAPE (memory band across the
+// top, 4x2 tab grid), so only the two landscape values are usable. The portrait
+// values are listed for completeness and to keep the numbering honest.
+constexpr uint8_t ORIENT_PORTRAIT_4PIN_TOP     = 0;
+constexpr uint8_t ORIENT_LANDSCAPE_4PIN_LEFT   = 1;
+constexpr uint8_t ORIENT_PORTRAIT_4PIN_BOTTOM  = 2;
+constexpr uint8_t ORIENT_LANDSCAPE_4PIN_RIGHT  = 3;
+
 // ---- Expression types ----
 constexpr uint8_t EXPR_ANALOG    = 0;
 constexpr uint8_t EXPR_DISCRETE  = 1;
