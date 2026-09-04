@@ -75,7 +75,7 @@ static void sendTuningSysEx(int cents) {
 // ------------------------------------------------------------
 static void sendPulseNote(bool up) {
     pulseNoteSent = up ? PITCH_UP_MIDI_NOTE : PITCH_DOWN_MIDI_NOTE;
-    midiOutNoteOn(pulseNoteSent, 127, PITCH_PULSE_MIDI_CHANNEL);
+    midiSendNoteOn(pulseNoteSent, 127, PITCH_PULSE_MIDI_CH);
     pulseNoteIsOn      = true;
     pulseNoteOnTime    = millis();
     waitingForResponse = true;
@@ -146,7 +146,7 @@ void pitchManagerPoll() {
         if (now - lastBootstrapTime >= 1000) {
             lastBootstrapTime = now;
             pulseNoteSent   = PITCH_UP_MIDI_NOTE;
-            midiOutNoteOn(pulseNoteSent, 127, PITCH_PULSE_MIDI_CHANNEL);
+            midiSendNoteOn(pulseNoteSent, 127, PITCH_PULSE_MIDI_CH);
             pulseNoteIsOn   = true;
             pulseNoteOnTime = now;
             if (DEBUG_ENABLED) Serial.println("Pitch: bootstrap UP (awaiting first GO report)");
@@ -155,7 +155,7 @@ void pitchManagerPoll() {
 
     // End the current nudge note after its on-time (bootstrap or feedback).
     if (pulseNoteIsOn && (now - pulseNoteOnTime >= PITCH_PULSE_ON_MS)) {
-        midiOutNoteOff(pulseNoteSent, 0, PITCH_PULSE_MIDI_CHANNEL);
+        midiSendNoteOff(pulseNoteSent, 0, PITCH_PULSE_MIDI_CH);
         pulseNoteIsOn = false;
     }
 

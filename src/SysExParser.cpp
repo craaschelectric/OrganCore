@@ -109,8 +109,8 @@ bool parseSysEx(const uint8_t *data, uint16_t length) {
             if (line == SYSEX_SAVE_LINE_INDEX &&
                 len >= strlen(SYSEX_SAVE_TRIGGER) &&
                 memcmp(newText, SYSEX_SAVE_TRIGGER, strlen(SYSEX_SAVE_TRIGGER)) == 0) {
-                midiOutNoteOn(SAVE_BUTTON_MIDI_NOTE, 127, SAVE_BUTTON_MIDI_CHANNEL + 1);
-                midiOutNoteOff(SAVE_BUTTON_MIDI_NOTE, 0, SAVE_BUTTON_MIDI_CHANNEL + 1);
+                midiSendNoteOn(SAVE_BUTTON_MIDI_NOTE, 127, SAVE_BUTTON_MIDI_CHANNEL);
+                midiSendNoteOff(SAVE_BUTTON_MIDI_NOTE, 0, SAVE_BUTTON_MIDI_CHANNEL);
                 Serial.println("DBG: SysEx SAVE trigger fired");
             }
         }

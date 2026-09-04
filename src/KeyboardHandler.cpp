@@ -21,12 +21,12 @@ void processKeyboards() {
             if (current == previous) continue;
 
             uint8_t midiNote = kbdLowNote[k] + (bitIdx - kbdStartBit[k]);
-            uint8_t ch = kbdMidiChannel[k] + 1;  // usbMIDI 1-indexed
+            uint8_t ch = kbdMidiChannel[k];
 
             if (current && !previous) {
-                midiOutNoteOn(midiNote, kbdVelocity[k], ch);
+                midiSendNoteOn(midiNote, kbdVelocity[k], ch);
             } else {
-                midiOutNoteOff(midiNote, 0, ch);
+                midiSendNoteOff(midiNote, 0, ch);
             }
         }
     }

@@ -142,7 +142,11 @@ extern const uint16_t exprDiscreteEnd[];
 extern const uint16_t remapFrom[];
 extern const uint16_t remapTo[];
 
-// ---- MIDI channel assignments (0-indexed) ----
+// ---- MIDI channel assignments ----
+// Every MIDI channel in this contract is 0-based, 0..15 -- the number that goes
+// in the status byte's low nibble. Nothing here is ever 1-based; the only place
+// the library knows about usbMIDI's 1..16 API is inside MidiOut's three send
+// functions.
 extern const uint8_t  MIDI_CH_STOPS_1;
 extern const uint8_t  MIDI_CH_STOPS_2;
 extern const uint8_t  MIDI_CH_EXPRESSION;

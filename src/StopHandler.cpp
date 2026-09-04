@@ -116,8 +116,8 @@ static void sendStopMidi(uint8_t stopIdx, bool on) {
     uint8_t ch   = stopMidiChannel[stopIdx];
     uint8_t note = stopMidiNote[stopIdx];
     if (note == 0xFF) return;
-    if (on) midiOutNoteOn(note, 127, ch + 1);
-    else    midiOutNoteOff(note, 0, ch + 1);
+    if (on) midiSendNoteOn(note, 127, ch);     // channels are 0-based throughout
+    else    midiSendNoteOff(note, 0, ch);
 }
 
 // Authoritative stop MIDI send that bypasses stopEngineSuppressed. Used by the

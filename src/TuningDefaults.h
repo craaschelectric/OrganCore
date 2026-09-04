@@ -42,7 +42,7 @@ const float    PITCH_A_REFERENCE_HZ     = 440.0f;
 
 const uint8_t  PITCH_UP_MIDI_NOTE       = 0;
 const uint8_t  PITCH_DOWN_MIDI_NOTE     = 0;
-const uint8_t  PITCH_PULSE_MIDI_CHANNEL = 1;
+const uint8_t  PITCH_PULSE_MIDI_CH      = 0;
 const uint8_t  PITCH_PULSE_ON_MS        = 0;
 const uint16_t PITCH_PULSE_TIMEOUT_MS   = 0;
 

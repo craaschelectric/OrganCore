@@ -68,34 +68,35 @@ void serialMidiProcess() {
                     continue;
                 }
 
-                // Not a virtual chain message — forward to USB MIDI
-                uint8_t usbCh = ch + 1;  // usbMIDI uses 1-indexed channels
+                // Not a virtual chain message — forward it on, channel and all.
+                // ch came off the wire 0-based and stays that way; MidiOut is
+                // the only thing that knows usbMIDI counts from 1.
 
                 switch (cmd) {
                     case 0x90:  // Note On
                         if (midiData[1] == 0) {
-                            midiOutNoteOff(midiData[0], 0, usbCh);
+                            midiSendNoteOff(midiData[0], 0, ch);
                             Serial.print("DBG: SerMIDI NoteOff ch=");
-                            Serial.print(usbCh); Serial.print(" note=");
+                            Serial.print(ch); Serial.print(" note=");
                             Serial.println(midiData[0]);
                         } else {
-                            midiOutNoteOn(midiData[0], midiData[1], usbCh);
+                            midiSendNoteOn(midiData[0], midiData[1], ch);
                             Serial.print("DBG: SerMIDI NoteOn ch=");
-                            Serial.print(usbCh); Serial.print(" note=");
+                            Serial.print(ch); Serial.print(" note=");
                             Serial.print(midiData[0]); Serial.print(" vel=");
                             Serial.println(midiData[1]);
                         }
                         break;
                     case 0x80:  // Note Off
-                        midiOutNoteOff(midiData[0], midiData[1], usbCh);
+                        midiSendNoteOff(midiData[0], midiData[1], ch);
                         Serial.print("DBG: SerMIDI NoteOff ch=");
-                        Serial.print(usbCh); Serial.print(" note=");
+                        Serial.print(ch); Serial.print(" note=");
                         Serial.println(midiData[0]);
                         break;
                     case 0xB0:  // CC
-                        midiOutControlChange(midiData[0], midiData[1], usbCh);
+                        midiSendControlChange(midiData[0], midiData[1], ch);
                         Serial.print("DBG: SerMIDI CC ch=");
-                        Serial.print(usbCh); Serial.print(" cc=");
+                        Serial.print(ch); Serial.print(" cc=");
                         Serial.print(midiData[0]); Serial.print(" val=");
                         Serial.println(midiData[1]);
                         break;

@@ -78,19 +78,19 @@ void processExpressions() {
         if (abs((int16_t)value - (int16_t)exprLastSent[i]) < exprDeadband[i]) continue;
         
         // Send all intermediate values between old and new
-        uint8_t ch = exprMidiChannel[i] + 1;  // usbMIDI 1-indexed
+        uint8_t ch = exprMidiChannel[i];
         uint8_t cc = exprMidiCC[i];
         
         if (exprLastSent[i] == 0xFF) {
             // First send after init — just send current value
-            midiOutControlChange(cc, value, ch);
+            midiSendControlChange(cc, value, ch);
         } else if (value > exprLastSent[i]) {
             for (uint8_t v = exprLastSent[i] + 1; v <= value; v++) {
-                midiOutControlChange(cc, v, ch);
+                midiSendControlChange(cc, v, ch);
             }
         } else {
             for (uint8_t v = exprLastSent[i] - 1; v != (uint8_t)(value - 1); v--) {
-                midiOutControlChange(cc, v, ch);
+                midiSendControlChange(cc, v, ch);
             }
         }
         

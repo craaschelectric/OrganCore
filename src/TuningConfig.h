@@ -45,7 +45,9 @@ extern const float    PITCH_A_REFERENCE_HZ;      // Hz = A_REF * 2^(cents/1200)
 // Pulse-feedback transport (GrandOrgue)
 extern const uint8_t  PITCH_UP_MIDI_NOTE;
 extern const uint8_t  PITCH_DOWN_MIDI_NOTE;
-extern const uint8_t  PITCH_PULSE_MIDI_CHANNEL;  // 1-based (usbMIDI convention)
+extern const uint8_t  PITCH_PULSE_MIDI_CH;       // 0-based, like every other channel
+                                                 // (renamed from PITCH_PULSE_MIDI_CHANNEL
+                                                 // at 1.8.0 when it stopped being 1-based)
 extern const uint8_t  PITCH_PULSE_ON_MS;         // note-on to note-off
 extern const uint16_t PITCH_PULSE_TIMEOUT_MS;    // no-response retry window
 

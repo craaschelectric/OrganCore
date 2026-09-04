@@ -60,7 +60,7 @@ static void sendPistonOn(uint8_t pistonIndex) {
     }
 
     pistonSentNote[pistonIndex] = note;
-    midiOutNoteOn(note, 127, PISTON_MIDI_CHANNEL + 1);
+    midiSendNoteOn(note, 127, PISTON_MIDI_CHANNEL);
 }
 
 // Send a piston MIDI NoteOff using the note that was sent on press.
@@ -68,7 +68,7 @@ static void sendPistonOff(uint8_t pistonIndex) {
     uint8_t note = pistonSentNote[pistonIndex];
     if (note == 0xFF) return;
 
-    midiOutNoteOff(note, 0, PISTON_MIDI_CHANNEL + 1);
+    midiSendNoteOff(note, 0, PISTON_MIDI_CHANNEL);
     pistonSentNote[pistonIndex] = 0xFF;
 }
 
@@ -118,8 +118,8 @@ static void handleNext() {
     if (nextPos >= NUM_SEQUENCER_PISTONS) {
         // Wrap around: send MEM+, delay, then fire first entry
         Serial.println("DBG: Sequencer wrap NEXT -> MEM+ then first");
-        midiOutNoteOn(MEM_UP_MIDI_NOTE, 127, MEM_UP_MIDI_CHANNEL + 1);
-        midiOutNoteOff(MEM_UP_MIDI_NOTE, 0, MEM_UP_MIDI_CHANNEL + 1);
+        midiSendNoteOn(MEM_UP_MIDI_NOTE, 127, MEM_UP_MIDI_CHANNEL);
+        midiSendNoteOff(MEM_UP_MIDI_NOTE, 0, MEM_UP_MIDI_CHANNEL);
         delay(SEQUENCER_WRAP_DELAY_MS);
         fireSequencerEntry(0);
     } else {
@@ -139,8 +139,8 @@ static void handlePrevious() {
     if (prevPos < 0) {
         // Wrap around: send MEM-, delay, then fire last entry
         Serial.println("DBG: Sequencer wrap PREV -> MEM- then last");
-        midiOutNoteOn(MEM_DOWN_MIDI_NOTE, 127, MEM_DOWN_MIDI_CHANNEL + 1);
-        midiOutNoteOff(MEM_DOWN_MIDI_NOTE, 0, MEM_DOWN_MIDI_CHANNEL + 1);
+        midiSendNoteOn(MEM_DOWN_MIDI_NOTE, 127, MEM_DOWN_MIDI_CHANNEL);
+        midiSendNoteOff(MEM_DOWN_MIDI_NOTE, 0, MEM_DOWN_MIDI_CHANNEL);
         delay(SEQUENCER_WRAP_DELAY_MS);
         fireSequencerEntry(NUM_SEQUENCER_PISTONS - 1);
     } else {
@@ -184,8 +184,8 @@ void processPistons() {
                 // Pressed alone — send own NoteOn/NoteOff
                 uint8_t note = pistonMidiNote[i];
                 if (note != 0xFF) {
-                    midiOutNoteOn(note, 127, PISTON_MIDI_CHANNEL + 1);
-                    midiOutNoteOff(note, 0, PISTON_MIDI_CHANNEL + 1);
+                    midiSendNoteOn(note, 127, PISTON_MIDI_CHANNEL);
+                    midiSendNoteOff(note, 0, PISTON_MIDI_CHANNEL);
                     Serial.println("DBG: SHIFT released alone, sent own MIDI");
                 }
             }
