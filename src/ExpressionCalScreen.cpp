@@ -72,7 +72,7 @@ void expressionCalScreenRun() {
     for (uint8_t i = 0; i < MAX_EXPRESSIONS; i++) shown[i][0] = '\0';
 
     while (true) {
-        ui.getTouchEvents();        // every loop -> responsive touch
+        uiGetTouchEvents();        // every loop -> responsive touch
 
         // Capture buttons: checked every loop (a tap must never be missed).
         for (uint8_t i = 0; i < NUM_EXPRESSIONS; i++) {

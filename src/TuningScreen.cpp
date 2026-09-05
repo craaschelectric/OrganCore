@@ -46,7 +46,7 @@ void tuningScreenRun() {
     for (int i = 0; i < NLINES; i++) shown[i][0] = '\0';
 
     while (true) {
-        ui.getTouchEvents();        // sampled every loop -> responsive touch
+        uiGetTouchEvents();        // sampled every loop -> responsive touch
         tempSensorPoll();           // keep the temperature reading live
 
         char line[NLINES][44];

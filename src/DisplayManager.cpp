@@ -401,7 +401,7 @@ static void crescendoUpdate() {
 // Touch handling for the crescendo screen (called from displayProcessTouch).
 static void crescendoHandleTouch() {
     retireTabBits();
-    ui.getTouchEvents();
+    uiGetTouchEvents();
 
     if (ui.checkForTouchEventInRect(TOUCH_RELEASED_EVENT,
                                     CFG_BTN_X, CFG_BTN_Y,
@@ -480,7 +480,7 @@ static void runConfigScreen() {
 
         bool leaveMenu = false;
         while (!leaveMenu) {
-            ui.getTouchEvents();
+            uiGetTouchEvents();
 
             if (ui.checkForButtonClicked(calBtn)) {
                 expressionCalScreenRun();   // blocking; returns here on Save/Cancel
@@ -521,6 +521,23 @@ void displayForceRepaint() {
     runScreenNeedsFullPaint = true;
 }
 
+// Touch polling for the whole library. TUI writes screen-pixel coordinates into
+// the public touchEventX/touchEventY; flipping them here is equivalent to
+// reversing an axis of its calibration, which cannot be done from outside the
+// class because the calibration constants are private members.
+//
+// Inverting one axis is a mirror -- the thing no orientation value can express,
+// as on a panel whose touch layer is reversed along only one edge. Inverting
+// both is a 180-degree rotation of the touch layer.
+void uiGetTouchEvents() {
+    ui.getTouchEvents();
+
+    if (ui.touchEventType == TOUCH_NO_EVENT) return;
+
+    if (TOUCH_INVERT_X) ui.touchEventX = (ui.lcdWidth  - 1) - ui.touchEventX;
+    if (TOUCH_INVERT_Y) ui.touchEventY = (ui.lcdHeight - 1) - ui.touchEventY;
+}
+
 void displayInit() {
     // Backlight: simple always-on. BACKLIGHT_PIN=255 disables (no backlight
     // control on this instrument), matching the POWER_SUPPLY_PIN sentinel
@@ -535,24 +552,11 @@ void displayInit() {
     ui.begin(TFT_CS_PIN, TFT_DC_PIN, TOUCH_CS_PIN,
              (int)TFT_ORIENTATION, Arial_9_Bold);
 
-    // Touch inversion, per axis, on top of that orientation. begin() has just
-    // loaded TUI's touch calibration for TFT_ORIENTATION, which maps a raw
-    // reading as  lcd = raw / scaler - offset. Flipping one axis end-for-end is
-    // therefore a negated scaler and a re-derived offset:
-    //
-    //   (span-1) - (raw/S - O)  ==  raw/(-S) - ( -((span-1) + O) )
-    //
-    // so the axis reverses with no change to TUI and no touch code of our own.
-    // Inverting both axes is exactly a 180-degree touch rotation; inverting one
-    // is the mirror an orientation value could never express.
-    if (TOUCH_INVERT_X) {
-        ui.touchScreenToLCDOffsetX = -((ui.lcdWidth  - 1) + ui.touchScreenToLCDOffsetX);
-        ui.touchScreenToLCDScalerX = -ui.touchScreenToLCDScalerX;
-    }
-    if (TOUCH_INVERT_Y) {
-        ui.touchScreenToLCDOffsetY = -((ui.lcdHeight - 1) + ui.touchScreenToLCDOffsetY);
-        ui.touchScreenToLCDScalerY = -ui.touchScreenToLCDScalerY;
-    }
+    // Touch inversion is NOT applied here. TUI keeps its calibration constants
+    // private, so they cannot be negated from outside the class; the inversion
+    // is done instead in uiGetTouchEvents(), which flips the finished screen
+    // coordinates. Same result, public API only.
+
     ui.setColorPaletteGray();
 
     COLOR_TAB_ON       = ui.lcdMakeColor(6, 40, 10);    // lit green
@@ -629,7 +633,7 @@ void displayProcessTouch() {
     // Retire any virtual bits set on the previous tap (one clean rising edge).
     retireTabBits();
 
-    ui.getTouchEvents();
+    uiGetTouchEvents();
 
 #if DEBUG_ENABLED
     // ui.touchEventType/touchEventX/touchEventY are public members TUI sets

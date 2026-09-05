@@ -149,7 +149,7 @@ void pistonAssignScreenRun() {
         // Pump both input sources so hardware and virtual-chain presses land.
         scanAllChains();
         serialMidiProcess();
-        ui.getTouchEvents();
+        uiGetTouchEvents();
 
         uint16_t slotAddr = assignCursorSlotAddr(&cur);
 
