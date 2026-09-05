@@ -1,8 +1,9 @@
 // DisplayManager.cpp
-// Run screen + config screen for the Op62-MVUMC console, on TeensyUserInterface.
+// Run screen + config screen, on TeensyUserInterface. The console names itself
+// via CONSOLE_NAME in its ConfigData.
 //
 // Run screen (top to bottom):
-//   - Title bar "Op62-MVUMC" with a Config button at its right end.
+//   - Title bar showing CONSOLE_NAME, with a Config button at its right end.
 //   - Memory control band: [-32] [-1]  MEM nnn  [+1] [+32]. The buttons call
 //     combinationMemStep(), which wraps 0..255 and persists the level.
 //   - Last-general line: the name of the last general piston pressed. Divisional
@@ -325,7 +326,7 @@ static void paintGeneralLine() {
 
 // Full run-screen repaint (title, config button, memory band, general, tabs).
 static void paintRunScreenFull() {
-    ui.drawTitleBar("Op62-MVUMC");
+    ui.drawTitleBar(CONSOLE_NAME);   // drawTitleBar takes const char*, no cast needed
     paintFlatButton(CFG_BTN_X, CFG_BTN_Y, CFG_BTN_W, CFG_BTN_H, "Config");
 
     // Clear the ENTIRE display space (below the title bar) before painting, so

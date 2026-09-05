@@ -178,6 +178,12 @@ extern const uint8_t  displayLineLCD[];
 extern const uint8_t  displayLineOffset[];
 extern const uint8_t  displayLineLen[];
 
+// Console name across the top of the run screen -- the one place an instrument
+// names itself on its own display. Keep it short: the title bar is 320 px wide
+// and shares the row with nothing else, so roughly 20 characters at the title
+// font.
+extern const char* const CONSOLE_NAME;
+
 // ---- TFT + touch controller pins (ILI9341 + XPT2046, TUI-owned SPI bus) ----
 extern const uint8_t  TFT_CS_PIN;
 extern const uint8_t  TFT_DC_PIN;

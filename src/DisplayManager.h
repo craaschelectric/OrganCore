@@ -1,5 +1,5 @@
 // DisplayManager.h
-// Touchscreen UI for the Op62-MVUMC console: a run screen (memory control band
+// Touchscreen UI for an organ console: a run screen (memory control band
 // with -32/-1/level/+1/+32, last-general name, and a 4x2 grid of the first 8
 // screen-stop tabs) and a config screen (small menu that currently offers
 // expression calibration and, on tuning builds, tuning/temperature). Built on
