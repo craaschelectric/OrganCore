@@ -4,8 +4,11 @@
 //
 // Run screen (top to bottom):
 //   - Title bar showing CONSOLE_NAME, with a Config button at its right end.
-//   - Memory control band: [-32] [-1]  MEM nnn  [+1] [+32]. The buttons call
-//     combinationMemStep(), which wraps 0..255 and persists the level.
+//   - Memory control band: [-100] [-1]  nnn  [+1] [+100]. The buttons call
+//     combinationMemStep(), which wraps 0..COMBO_MEM_LEVELS-1 and persists the
+//     level. The coarse step is 100 (the level space is 1024 deep, so 32 was
+//     a long walk); the physical Mem+/Mem- pistons are unchanged. The readout
+//     is the bare level in Arial_32_Bold, as tall as the buttons beside it.
 //   - Last-general line: the name of the last general piston pressed. Divisional
 //     pistons never write lastGeneralName, so only generals show here; GC clears
 //     it. When the combination card is unavailable, the error text shows here in
@@ -19,8 +22,25 @@
 //     scan.
 //
 // At most 8 tabs are drawn/handled: if NUM_SCREEN_STOPS is larger the remaining
-// screen stops still exist in the config, they just have no touch tab; if it is
-// zero the grid is left empty and the run screen is memory status only.
+// screen stops still exist in the config, they just have no touch tab.
+//
+// EXPANDED LAYOUT (NUM_SCREEN_STOPS == 0). A console whose stops live on the
+// sample engine's own touch page draws no tabs, which used to leave the bottom
+// 60% of the screen black. With no tabs the run screen instead uses that space:
+//   - The four memory buttons [-100] [-1] [+1] [+100] become full stop-tab size
+//     (TAB_W x TAB_H, on the tab grid's own columns) across the top of it.
+//   - The memory level as a bare number in Arial_40_Bold, centered, alone on
+//     its line (the buttons above it are label enough).
+//   - The last general name in Arial_24_Bold at the left of its line, with a
+//     yellow SET badge in a reserved field at the right of that same line,
+//     shown only while the SET piston is held.
+//   - The blind-crescendo indicator, centered, on its own line (not
+//     right-justified into the general line as in the compact layout).
+//   - The combination error text, centered, on its own line.
+// Every line repaints on its own value. The choice is automatic: expandedLayout
+// is set from numTabs in displayInit(). The title bar and Config button are
+// identical in both layouts; the memory band and touch rects are not, so each
+// layout has its own.
 //
 // Config screen: a small blocking menu (Calibration + Back), room to grow. While
 // it is open, currentScreen == SCREEN_CONFIG and displayScanChainsActive()
@@ -102,10 +122,10 @@ static const int MEM_BAND_H   = 40;              // 26..66
 static const int MEM_BTN_Y    = MEM_BAND_Y + 4;  // buttons inset in the band
 static const int MEM_BTN_H    = MEM_BAND_H - 8;
 static const int MEM_BTN_W    = 50;
-static const int MEM_M32_X    = 4;
-static const int MEM_M1_X     = MEM_M32_X + MEM_BTN_W + 4;   // 58
-static const int MEM_P32_X    = SCREEN_W - MEM_BTN_W - 4;    // 266
-static const int MEM_P1_X     = MEM_P32_X - MEM_BTN_W - 4;   // 212
+static const int MEM_M100_X    = 4;
+static const int MEM_M1_X     = MEM_M100_X + MEM_BTN_W + 4;   // 58
+static const int MEM_P100_X    = SCREEN_W - MEM_BTN_W - 4;    // 266
+static const int MEM_P1_X     = MEM_P100_X - MEM_BTN_W - 4;   // 212
 // Readout sits centered between the -1 and +1 buttons.
 static const int MEM_READ_X   = MEM_M1_X + MEM_BTN_W;        // 108
 static const int MEM_READ_W   = MEM_P1_X - MEM_READ_X;       // 104
@@ -114,12 +134,38 @@ static const int MEM_READ_W   = MEM_P1_X - MEM_READ_X;       // 104
 static const int GEN_Y = MEM_BAND_Y + MEM_BAND_H + 2;        // 76
 static const int GEN_H = 20;                                 // 76..96
 
+// Expanded layout (no screen stops) -- set in displayInit() from numTabs.
+static bool expandedLayout = false;
+
 // Tab grid fills the rest of the screen.
 static const int GRID_TOP = GEN_Y + GEN_H;                   // 96
 static const int TAB_GAP  = 3;
 static const int TAB_LINE_GAP = 2;   // vertical space between tab label lines
 static const int TAB_W    = (SCREEN_W - (GRID_COLS + 1) * TAB_GAP) / GRID_COLS;
 static const int TAB_H    = (SCREEN_H - GRID_TOP - (GRID_ROWS + 1) * TAB_GAP) / GRID_ROWS;
+
+// Expanded-layout geometry. The four memory buttons are exactly the size of an
+// LCD stop tab (TAB_W x TAB_H) and sit on the tab grid's own column positions,
+// filling the top row of the freed space. Everything below is a full-width,
+// centered line. Derived from the tab constants so the two can't drift.
+static const int BIG_BTN_W    = TAB_W;                          // 76
+static const int BIG_BTN_H    = TAB_H;                          // 67
+static const int BIG_BTN_Y    = TITLE_H + TAB_GAP;              // 35 .. 102
+static const int BIG_M100_X   = TAB_GAP;                        // 3
+static const int BIG_M1_X     = TAB_GAP + (TAB_W + TAB_GAP);    // 82
+static const int BIG_P1_X     = TAB_GAP + 2 * (TAB_W + TAB_GAP);// 161
+static const int BIG_P100_X   = TAB_GAP + 3 * (TAB_W + TAB_GAP);// 240
+
+static const int BIG_MEM_Y    = BIG_BTN_Y + BIG_BTN_H + 4;      // 106
+static const int BIG_MEM_H    = 48;                             // 106..154 (Arial_40_Bold, full width)
+static const int BIG_GEN_Y    = BIG_MEM_Y + BIG_MEM_H + 2;      // 156
+static const int BIG_GEN_H    = 32;                             // 156..188 (Arial_24_Bold)
+static const int BIG_SET_W    = 76;                             // SET field at the right end of the general line
+static const int BIG_SET_X    = SCREEN_W - BIG_SET_W - 4;       // 240
+static const int BIG_CRESC_Y  = BIG_GEN_Y + BIG_GEN_H + 2;      // 190
+static const int BIG_CRESC_H  = 24;                             // 190..214 (Arial_20_Bold)
+static const int BIG_ERR_Y    = BIG_CRESC_Y + BIG_CRESC_H + 2;  // 216
+static const int BIG_ERR_H    = SCREEN_H - BIG_ERR_Y;           // 216..240 (Arial_20_Bold)
 
 // Colors (set in displayInit once ui exists).
 static uint16_t COLOR_TAB_ON;
@@ -140,6 +186,7 @@ static uint16_t lastMemLevel;              // last painted memory level
 static bool    lastCombinationAvailable;   // last painted availability
 static char    lastPaintedGeneral[8];      // last painted general name
 static bool    runScreenNeedsFullPaint;    // force a full repaint (e.g. on entry)
+static bool    lastPaintedSetHeld;         // last painted SET badge state (expanded layout only)
 static uint8_t lastPaintedCrescLevel;      // last painted operational crescendo level (0 = none)
 
 // Crescendo programming screen (SCREEN_CRESCENDO): a control band above the same
@@ -280,12 +327,78 @@ static void paintFlatButton(int x, int y, int w, int h, const char* label) {
     ui.lcdPrintCentered((char*)label);
 }
 
-// Draw just the "MEM nnn" readout between the -1 and +1 buttons.
+// Draw the SET badge in the reserved right-hand field of the general line. It
+// owns that field: paintGeneralLine() clears only up to BIG_SET_X, so the two
+// never overwrite each other and a SET press repaints 76x32 pixels rather than
+// a whole line -- the scan loop stalls for the SPI write. Expanded layout only.
+static void paintSetIndicator() {
+    ui.lcdDrawFilledRectangle(BIG_SET_X, BIG_GEN_Y, BIG_SET_W, BIG_GEN_H, COLOR_STATUS_BG);
+    if (setHeld) {
+        ui.lcdSetFont(Arial_24_Bold);
+        ui.lcdSetFontColor(COLOR_ERROR_TEXT);     // yellow, same as the other alert text
+        ui.lcdSetCursorXY(BIG_SET_X + BIG_SET_W / 2,
+                          BIG_GEN_Y + (BIG_GEN_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
+        ui.lcdPrintCentered((char*)"SET");
+    }
+    lastPaintedSetHeld = setHeld;
+}
+
+// Draw the blind-crescendo indicator on its own line (expanded layout only --
+// the compact layout still right-justifies it into the general line).
+static void paintCrescendoLine() {
+    ui.lcdDrawFilledRectangle(0, BIG_CRESC_Y, SCREEN_W, BIG_CRESC_H, COLOR_STATUS_BG);
+    if (crescendoLevel > 0) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "CRESCENDO %u", crescendoLevel);
+        ui.lcdSetFont(Arial_20_Bold);
+        ui.lcdSetFontColor(COLOR_ERROR_TEXT);     // yellow
+        ui.lcdSetCursorXY(SCREEN_W / 2,
+                          BIG_CRESC_Y + (BIG_CRESC_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
+        ui.lcdPrintCentered(buf);
+    }
+    lastPaintedCrescLevel = crescendoLevel;
+}
+
+// Draw the combination error text on its own line (expanded layout only). Blank
+// while the combination store is healthy.
+static void paintErrorLine() {
+    ui.lcdDrawFilledRectangle(0, BIG_ERR_Y, SCREEN_W, BIG_ERR_H, COLOR_STATUS_BG);
+    if (!combinationAvailable && combinationErrorText != NULL) {
+        ui.lcdSetFont(Arial_20_Bold);
+        ui.lcdSetFontColor(COLOR_ERROR_TEXT);
+        ui.lcdSetCursorXY(SCREEN_W / 2,
+                          BIG_ERR_Y + (BIG_ERR_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
+        ui.lcdPrintCentered((char*)combinationErrorText);
+    }
+    lastCombinationAvailable = combinationAvailable;
+}
+
+// Draw just the "MEM nnn" readout: between the -1 and +1 buttons in the compact
+// layout, or large below the button band in the expanded one.
 static void paintMemoryLevel() {
+    if (expandedLayout) {
+        // The whole line is the number, bare and centered on the full screen
+        // width -- the -100/-1/+1/+100 buttons directly above it say what it is,
+        // and dropping the label leaves the digits all the room on the line.
+        ui.lcdDrawFilledRectangle(0, BIG_MEM_Y, SCREEN_W, BIG_MEM_H, COLOR_STATUS_BG);
+        char bigBuf[16];
+        snprintf(bigBuf, sizeof(bigBuf), "%u", combinationMemoryLevel);
+        ui.lcdSetFont(Arial_40_Bold);
+        ui.lcdSetFontColor(COLOR_STATUS_TEXT);
+        ui.lcdSetCursorXY(SCREEN_W / 2,
+                          BIG_MEM_Y + (BIG_MEM_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
+        ui.lcdPrintCentered(bigBuf);
+        lastMemLevel = combinationMemoryLevel;
+        return;
+    }
+
+    // Compact layout: the bare number too, sized to the -100/-1/+1/+100 buttons
+    // flanking it (MEM_BTN_H is 32). It sits in the band between the -1 and +1
+    // buttons, which is 104 wide -- four digits at 32 point come to about 75.
     ui.lcdDrawFilledRectangle(MEM_READ_X, MEM_BAND_Y, MEM_READ_W, MEM_BAND_H, COLOR_STATUS_BG);
     char buf[16];
-    snprintf(buf, sizeof(buf), "MEM %u", combinationMemoryLevel);
-    ui.lcdSetFont(Arial_10_Bold);
+    snprintf(buf, sizeof(buf), "%u", combinationMemoryLevel);
+    ui.lcdSetFont(Arial_32_Bold);
     ui.lcdSetFontColor(COLOR_STATUS_TEXT);
     ui.lcdSetCursorXY(MEM_READ_X + MEM_READ_W / 2,
                       MEM_BAND_Y + (MEM_BAND_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
@@ -293,8 +406,24 @@ static void paintMemoryLevel() {
     lastMemLevel = combinationMemoryLevel;
 }
 
-// Draw the last-general line, or the combination error text if unavailable.
+// Draw the last-general line. In the expanded layout it carries the name at the
+// left and the SET badge at the right; the crescendo indicator and error text
+// have their own lines, painted by paintCrescendoLine()/paintErrorLine(), which
+// also own their last-painted trackers. The clear here stops at BIG_SET_X so
+// paintSetIndicator() alone owns that field. In the compact layout the name,
+// crescendo and error still share this one line as they always did.
 static void paintGeneralLine() {
+    if (expandedLayout) {
+        ui.lcdDrawFilledRectangle(0, BIG_GEN_Y, BIG_SET_X, BIG_GEN_H, COLOR_STATUS_BG);
+        ui.lcdSetFont(Arial_24_Bold);
+        ui.lcdSetFontColor(COLOR_STATUS_TEXT);
+        ui.lcdSetCursorXY(6, BIG_GEN_Y + (BIG_GEN_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
+        ui.lcdPrint(lastGeneralName);
+        strncpy(lastPaintedGeneral, lastGeneralName, sizeof(lastPaintedGeneral) - 1);
+        lastPaintedGeneral[sizeof(lastPaintedGeneral) - 1] = '\0';
+        return;
+    }
+
     ui.lcdDrawFilledRectangle(0, GEN_Y, SCREEN_W, GEN_H, COLOR_STATUS_BG);
     ui.lcdSetFont(Arial_10_Bold);
     if (!combinationAvailable && combinationErrorText != NULL) {
@@ -324,6 +453,18 @@ static void paintGeneralLine() {
     lastPaintedGeneral[sizeof(lastPaintedGeneral) - 1] = '\0';
 }
 
+// Draw one expanded-layout memory button: same size, colors and frame as an LCD
+// stop tab, with a label big enough to match.
+static void paintBigMemButton(int x, const char* label) {
+    ui.lcdDrawFilledRectangle(x, BIG_BTN_Y, BIG_BTN_W, BIG_BTN_H, COLOR_TAB_OFF);
+    ui.lcdDrawRectangle(x, BIG_BTN_Y, BIG_BTN_W, BIG_BTN_H, COLOR_TAB_FRAME);
+    ui.lcdSetFont(Arial_20_Bold);
+    ui.lcdSetFontColor(COLOR_TAB_TEXT_OFF);
+    ui.lcdSetCursorXY(x + BIG_BTN_W / 2,
+                      BIG_BTN_Y + (BIG_BTN_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
+    ui.lcdPrintCentered((char*)label);
+}
+
 // Full run-screen repaint (title, config button, memory band, general, tabs).
 static void paintRunScreenFull() {
     ui.drawTitleBar(CONSOLE_NAME);   // drawTitleBar takes const char*, no cast needed
@@ -334,11 +475,25 @@ static void paintRunScreenFull() {
     // tabs or below the last tab row. Everything below is painted on top.
     ui.lcdDrawFilledRectangle(0, TITLE_H, SCREEN_W, SCREEN_H - TITLE_H, COLOR_STATUS_BG);
 
+    if (expandedLayout) {
+        paintBigMemButton(BIG_M100_X, "-100");
+        paintBigMemButton(BIG_M1_X,   "-1");
+        paintBigMemButton(BIG_P1_X,   "+1");
+        paintBigMemButton(BIG_P100_X, "+100");
+        paintMemoryLevel();      // big centered number, full width
+        paintGeneralLine();
+        paintSetIndicator();
+        paintCrescendoLine();
+        paintErrorLine();
+        runScreenNeedsFullPaint = false;
+        return;
+    }
+
     ui.lcdDrawFilledRectangle(0, MEM_BAND_Y, SCREEN_W, MEM_BAND_H, COLOR_STATUS_BG);
-    paintFlatButton(MEM_M32_X, MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "-32");
+    paintFlatButton(MEM_M100_X, MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "-100");
     paintFlatButton(MEM_M1_X,  MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "-1");
     paintFlatButton(MEM_P1_X,  MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "+1");
-    paintFlatButton(MEM_P32_X, MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "+32");
+    paintFlatButton(MEM_P100_X, MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "+100");
     paintMemoryLevel();
 
     paintGeneralLine();
@@ -571,6 +726,11 @@ void displayInit() {
 
     numTabs = (NUM_SCREEN_STOPS < MAX_TABS) ? NUM_SCREEN_STOPS : (uint8_t)MAX_TABS;
 
+    // No tabs to draw means the bottom of the screen is free: use the expanded
+    // run-screen layout. Automatic, so a console gets it purely by having
+    // NUM_SCREEN_STOPS == 0 -- no extra config value to set or forget.
+    expandedLayout = (numTabs == 0);
+
     for (uint16_t i = 0; i < MAX_STOPS; i++) {
         lastTabOn[i] = false;
         tabBitPendingClear[i] = false;
@@ -578,6 +738,7 @@ void displayInit() {
     lastMemLevel = 0xFFFF;              // force first readout paint (beyond any real level)
     lastCombinationAvailable = true;
     lastPaintedGeneral[0] = '\0';
+    lastPaintedSetHeld = false;
 
     // Go straight to the operational run screen.
     currentScreen = SCREEN_OPERATIONAL;
@@ -603,13 +764,34 @@ void displayUpdate() {
 
     // Reactive repaint: only redraw what changed.
 
-    // Memory readout: level changed (e.g. a -20/-1/+1/+20 tap).
+    // Memory readout: level changed (e.g. a -100/-1/+1/+100 tap, or a physical
+    // Mem+/Mem- piston).
     if (combinationMemoryLevel != lastMemLevel) {
         paintMemoryLevel();
     }
 
-    // General line: availability, general name, the dirty flag, or the crescendo
-    // indicator level changed.
+    if (expandedLayout) {
+        // Each line repaints on its own value, so a SET press doesn't redraw the
+        // 40-point number and a crescendo change doesn't redraw the general name.
+        if (setHeld != lastPaintedSetHeld) {
+            paintSetIndicator();
+        }
+        if (generalDisplayDirty ||
+            strncmp(lastGeneralName, lastPaintedGeneral, sizeof(lastPaintedGeneral)) != 0) {
+            paintGeneralLine();
+            generalDisplayDirty = false;
+        }
+        if (crescendoLevel != lastPaintedCrescLevel) {
+            paintCrescendoLine();
+        }
+        if (combinationAvailable != lastCombinationAvailable) {
+            paintErrorLine();
+        }
+        return;   // no tabs in this layout
+    }
+
+    // Compact layout -- one shared line: availability, general name, the dirty
+    // flag, or the crescendo indicator level changed.
     if (combinationAvailable != lastCombinationAvailable ||
         generalDisplayDirty ||
         crescendoLevel != lastPaintedCrescLevel ||
@@ -668,10 +850,39 @@ void displayProcessTouch() {
     }
 
     // Memory control buttons: step the level (combinationMemStep wraps + persists).
+    // The two layouts put them in different places, so each has its own rects.
+    if (expandedLayout) {
+        if (ui.checkForTouchEventInRect(TOUCH_RELEASED_EVENT,
+                                        BIG_M100_X, BIG_BTN_Y,
+                                        BIG_M100_X + BIG_BTN_W, BIG_BTN_Y + BIG_BTN_H)) {
+            combinationMemStep(-100);
+            return;
+        }
+        if (ui.checkForTouchEventInRect(TOUCH_RELEASED_EVENT,
+                                        BIG_M1_X, BIG_BTN_Y,
+                                        BIG_M1_X + BIG_BTN_W, BIG_BTN_Y + BIG_BTN_H)) {
+            combinationMemStep(-1);
+            return;
+        }
+        if (ui.checkForTouchEventInRect(TOUCH_RELEASED_EVENT,
+                                        BIG_P1_X, BIG_BTN_Y,
+                                        BIG_P1_X + BIG_BTN_W, BIG_BTN_Y + BIG_BTN_H)) {
+            combinationMemStep(1);
+            return;
+        }
+        if (ui.checkForTouchEventInRect(TOUCH_RELEASED_EVENT,
+                                        BIG_P100_X, BIG_BTN_Y,
+                                        BIG_P100_X + BIG_BTN_W, BIG_BTN_Y + BIG_BTN_H)) {
+            combinationMemStep(100);
+            return;
+        }
+        return;    // no stop tabs in this layout
+    }
+
     if (ui.checkForTouchEventInRect(TOUCH_RELEASED_EVENT,
-                                    MEM_M32_X, MEM_BTN_Y,
-                                    MEM_M32_X + MEM_BTN_W, MEM_BTN_Y + MEM_BTN_H)) {
-        combinationMemStep(-32);
+                                    MEM_M100_X, MEM_BTN_Y,
+                                    MEM_M100_X + MEM_BTN_W, MEM_BTN_Y + MEM_BTN_H)) {
+        combinationMemStep(-100);
         return;
     }
     if (ui.checkForTouchEventInRect(TOUCH_RELEASED_EVENT,
@@ -687,9 +898,9 @@ void displayProcessTouch() {
         return;
     }
     if (ui.checkForTouchEventInRect(TOUCH_RELEASED_EVENT,
-                                    MEM_P32_X, MEM_BTN_Y,
-                                    MEM_P32_X + MEM_BTN_W, MEM_BTN_Y + MEM_BTN_H)) {
-        combinationMemStep(32);
+                                    MEM_P100_X, MEM_BTN_Y,
+                                    MEM_P100_X + MEM_BTN_W, MEM_BTN_Y + MEM_BTN_H)) {
+        combinationMemStep(100);
         return;
     }
 
