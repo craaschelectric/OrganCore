@@ -26,6 +26,7 @@ static uint32_t pulseNoteOnTime     = 0;
 static uint32_t lastPulseSentTime   = 0;
 static uint8_t  consecutiveRetries  = 0;
 static uint32_t lastBootstrapTime   = 0;       // startup nudge cadence until first report
+static uint16_t stalledReports      = 0;       // consecutive reports that did not move (diagnostic)
 
 // ------------------------------------------------------------
 // EEPROM manual trim
@@ -80,7 +81,12 @@ static void sendPulseNote(bool up) {
     pulseNoteOnTime    = millis();
     waitingForResponse = true;
     lastPulseSentTime  = pulseNoteOnTime;
-    if (DEBUG_ENABLED) { Serial.print("Pitch: pulse "); Serial.println(up ? "UP" : "DOWN"); }
+    if (DEBUG_ENABLED) {
+        Serial.print("Pitch: pulse ");     Serial.print(up ? "UP" : "DOWN");
+        Serial.print("  reported=");       Serial.print(reportedCents);
+        Serial.print(" target=");          Serial.print(totalTargetCents);
+        Serial.print(" delta=");           Serial.println(totalTargetCents - reportedCents);
+    }
 }
 
 static void startPulseSequence() {
@@ -130,7 +136,13 @@ void pitchManagerSetup() {
     // pulse loop can't start until GO has reported an offset, which the poll()
     // bootstrap nudge brings about.
     if (PITCH_SEND_TUNING_SYSEX) sendTuningSysEx(totalTargetCents);
-    if (DEBUG_ENABLED) Serial.println("Pitch: initialized");
+    if (DEBUG_ENABLED) {
+        Serial.print("Pitch: initialized  temp="); Serial.print(getTempOffsetCents());
+        Serial.print(" manual=");                  Serial.print(manualOffset);
+        Serial.print(" target=");                  Serial.print(totalTargetCents);
+        Serial.print(" (");                        Serial.print(getTargetFrequencyHz(), 1);
+        Serial.println(" Hz)");
+    }
 }
 
 void pitchManagerPoll() {
@@ -149,7 +161,10 @@ void pitchManagerPoll() {
             midiSendNoteOn(pulseNoteSent, 127, PITCH_PULSE_MIDI_CH);
             pulseNoteIsOn   = true;
             pulseNoteOnTime = now;
-            if (DEBUG_ENABLED) Serial.println("Pitch: bootstrap UP (awaiting first GO report)");
+            if (DEBUG_ENABLED) {
+                Serial.print("Pitch: bootstrap UP (awaiting first GO report, target=");
+                Serial.print(totalTargetCents); Serial.println(")");
+            }
         }
     }
 
@@ -176,7 +191,23 @@ void pitchManagerOnTempChange() {
 void pitchManagerOnReportedOffset(int newReportedCents) {
     if (!PITCH_PULSE_ENABLED) return;
 
-    if (DEBUG_ENABLED) { Serial.print("Pitch: GO reported "); Serial.print(newReportedCents); Serial.println(" cents"); }
+    if (DEBUG_ENABLED) {
+        Serial.print("Pitch: GO reported "); Serial.print(newReportedCents);
+        Serial.print(" cents  target=");     Serial.print(totalTargetCents);
+        Serial.print(" delta=");             Serial.println(totalTargetCents - newReportedCents);
+    }
+
+    // Diagnostic: a nudge that produces no change in the reported offset means
+    // GrandOrgue is not moving -- saturated, or not listening to that note.
+    // Without this the log looks identical to healthy progress, just endless.
+    if (DEBUG_ENABLED && pulseActive && newReportedCents == reportedCents) {
+        stalledReports++;
+        Serial.print("Pitch: WARNING no movement from nudge #"); Serial.print(stalledReports);
+        Serial.print(" (stuck at "); Serial.print(newReportedCents);
+        Serial.print(", target "); Serial.print(totalTargetCents); Serial.println(")");
+    } else {
+        stalledReports = 0;
+    }
 
     reportedCents = newReportedCents;
     haveReceivedReport = true;

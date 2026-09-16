@@ -6,6 +6,8 @@
 #include "StartupScreen.h"
 #include "OrganCore.h"        // STARTUP_WAIT_* contract symbols
 #include "Display.h"          // shared ui instance
+#include "ScanChain.h"        // scanAllChains() - clear the lamps on entry
+#include "StopHandler.h"      // buildStopOutputs()
 
 #include <stdio.h>
 
@@ -13,6 +15,25 @@ bool startupNoteSeen = false;
 
 void startupWaitScreenRun() {
     startupNoteSeen = false;
+
+    // Clear the drawstop lamps before we block. Nothing has shifted the output
+    // chain out yet at this point in setup() -- the sketch's first
+    // scanAllChains() comes AFTER this screen returns -- so the CD4094s are
+    // still holding whatever random state they powered up in, and on a console
+    // with many lamps that reads as "mostly on" for as long as the organist
+    // waits for the engine.
+    //
+    // No general cancel is needed and none is wanted here. stopCommandedState[]
+    // is already all-false this early, so a cancel would change no state; it
+    // would only fire a note-off per stop at an engine that by definition is not
+    // listening yet. The lamps are wrong because the hardware was never written,
+    // not because the state is wrong. Writing it is the whole fix.
+    //
+    // The input half of this scan is harmless: the sketch primes edge detection
+    // with its own scanAllChains()/applyRemaps()/saveInputState() after we
+    // return, so no drawstop that happens to be drawn will register as a change.
+    buildStopOutputs();
+    scanAllChains();
 
     ui.drawTitleBar("Starting Up");
     ui.clearDisplaySpace();

@@ -63,6 +63,8 @@
 #endif
 #include "TuningConfig.h"
 #include "TuningScreen.h"
+#include "PitchManager.h"      // pitchManagerPoll() - see the pump block in runConfigScreen()
+#include "TempSensor.h"        // tempSensorPoll()   - see the pump block in runConfigScreen()
 
 #include <stdio.h>
 #include <string.h>
@@ -636,7 +638,19 @@ static void runConfigScreen() {
 
         bool leaveMenu = false;
         while (!leaveMenu) {
+            // This menu BLOCKS loop(), and it is the parent of every blocking
+            // sub-screen -- you sit here before and after each of them. So the
+            // same pump the sub-screens need belongs here too. The pitch path is
+            // the one that bites: a nudge note-on has its note-off in
+            // pitchManagerPoll(), and GrandOrgue's reply is parsed by
+            // usbMIDI.read(). Miss either and the note is stranded on, the reply
+            // is lost, and pulseActive stays true -- after which every later
+            // trim is a no-op, because recalcAndApply() guards
+            // startPulseSequence() on !pulseActive.
             uiGetTouchEvents();
+            usbMIDI.read();             // GrandOrgue's pitch reports arrive here
+            tempSensorPoll();           // keep the temperature reading live
+            pitchManagerPoll();         // nudge note-offs and retry timeouts
 
             if (ui.checkForButtonClicked(calBtn)) {
                 expressionCalScreenRun();   // blocking; returns here on Save/Cancel

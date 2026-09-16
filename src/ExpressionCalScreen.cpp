@@ -20,6 +20,8 @@
 #include "ExpressionCalScreen.h"
 #include "OrganCore.h"
 #include "ExpressionCalibration.h"
+#include "PitchManager.h"       // pitchManagerPoll() - see the pump block below
+#include "TempSensor.h"         // tempSensorPoll()   - see the pump block below
 #include "Display.h"            // shared ui instance
 
 #include <stdio.h>
@@ -72,7 +74,18 @@ void expressionCalScreenRun() {
     for (uint8_t i = 0; i < MAX_EXPRESSIONS; i++) shown[i][0] = '\0';
 
     while (true) {
-        uiGetTouchEvents();        // every loop -> responsive touch
+        // This screen BLOCKS loop(), so anything loop() normally does has to be
+        // done here too or it stops happening while the screen is open. The
+        // pitch path is the one that bites: a nudge note-on sent just before
+        // entering has its note-off in pitchManagerPoll(), and GrandOrgue's
+        // reply is parsed by usbMIDI.read(). Miss either and the note is
+        // stranded on, the reply is lost, and pulseActive stays true -- after
+        // which every later trim is a no-op, because recalcAndApply() guards
+        // startPulseSequence() on !pulseActive.
+        uiGetTouchEvents();         // every loop -> responsive touch
+        usbMIDI.read();             // GrandOrgue's pitch reports arrive here
+        tempSensorPoll();           // keep the temperature reading live
+        pitchManagerPoll();         // nudge note-offs and retry timeouts
 
         // Capture buttons: checked every loop (a tap must never be missed).
         for (uint8_t i = 0; i < NUM_EXPRESSIONS; i++) {

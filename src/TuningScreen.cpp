@@ -46,8 +46,18 @@ void tuningScreenRun() {
     for (int i = 0; i < NLINES; i++) shown[i][0] = '\0';
 
     while (true) {
-        uiGetTouchEvents();        // sampled every loop -> responsive touch
+        // This screen BLOCKS loop(), so anything loop() normally does has to be
+        // done here too or it simply stops happening while the organist is
+        // trimming. usbMIDI.read() is what parses GrandOrgue's pitch reports,
+        // and pitchManagerPoll() is what sends the note-off ending each nudge
+        // and handles the retry timeout. Without them a manual trim fires one
+        // nudge, strands its note-on, never hears the reply, and leaves
+        // pulseActive true -- after which every further trim is a no-op on the
+        // feedback path because recalcAndApply() guards on !pulseActive.
+        uiGetTouchEvents();         // sampled every loop -> responsive touch
+        usbMIDI.read();             // GrandOrgue's pitch reports arrive here
         tempSensorPoll();           // keep the temperature reading live
+        pitchManagerPoll();         // nudge note-offs and retry timeouts
 
         char line[NLINES][44];
         snprintf(line[0], sizeof(line[0]), "Temp:        %.1f C", (double)getTempDegC());

@@ -28,6 +28,8 @@
 #include "SerialMidi.h"
 #include "RemapStore.h"
 #include "PistonAssignSlots.h"
+#include "PitchManager.h"       // pitchManagerPoll() - see the pump block below
+#include "TempSensor.h"         // tempSensorPoll()   - see the pump block below
 #include "Display.h"            // shared ui instance
 
 #include <stdio.h>
@@ -150,6 +152,18 @@ void pistonAssignScreenRun() {
         scanAllChains();
         serialMidiProcess();
         uiGetTouchEvents();
+
+        // This screen BLOCKS loop(), so anything loop() normally does has to be
+        // done here too or it stops happening while the screen is open. The
+        // pitch path is the one that bites: a nudge note-on sent just before
+        // entering has its note-off in pitchManagerPoll(), and GrandOrgue's
+        // reply is parsed by usbMIDI.read(). Miss either and the note is
+        // stranded on, the reply is lost, and pulseActive stays true -- after
+        // which every later trim is a no-op, because recalcAndApply() guards
+        // startPulseSequence() on !pulseActive.
+        usbMIDI.read();             // GrandOrgue's pitch reports arrive here
+        tempSensorPoll();           // keep the temperature reading live
+        pitchManagerPoll();         // nudge note-offs and retry timeouts
 
         uint16_t slotAddr = assignCursorSlotAddr(&cur);
 
