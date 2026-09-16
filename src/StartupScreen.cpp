@@ -8,6 +8,7 @@
 #include "Display.h"          // shared ui instance
 #include "ScanChain.h"        // scanAllChains() - clear the lamps on entry
 #include "StopHandler.h"      // buildStopOutputs()
+#include "OrganPower.h"       // powerPoll() - the power switch works on every screen
 
 #include <stdio.h>
 
@@ -46,6 +47,8 @@ void startupWaitScreenRun() {
     int32_t  lastShownSecs = -1;
 
     while (!startupNoteSeen) {
+        scanAllChains();  // refresh inputs so powerPoll() sees the power switch
+        powerPoll();      // the organist can switch off while waiting for the engine
         usbMIDI.read();   // dispatch to the sketch handlers; the handshake note sets startupNoteSeen
 
         int32_t secs = (int32_t)((millis() - startMs) / 1000);

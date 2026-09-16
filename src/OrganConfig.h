@@ -211,8 +211,95 @@ extern const char* const displayLineLabel[];
 extern const uint8_t  SYSEX_SAVE_LINE_INDEX;
 extern const char     SYSEX_SAVE_TRIGGER[];
 
-// ---- Power / display misc ----
-extern const uint8_t  POWER_SUPPLY_PIN;
+// ---- Console power control (see OrganPower.h, and POWER-CONTROL.md) ----
+// Every part is optional. A console that owns its own power sets
+// POWER_KEEPALIVE_PIN and POWER_HOST_SHUTDOWN_PIN to 255, POWER_SWITCH_ADDR to
+// ADDR_DISABLED and POWER_SHUTDOWN_SYSEX_LEN to 0, and OrganPower does nothing.
+//
+// Replaces POWER_SUPPLY_PIN, which was declared here from 1.0 and read by no
+// library code at any point.
+
+// Held HIGH for as long as the console should stay powered. On a retrofit whose
+// supply latches through a relay the control computer must hold in, this is
+// that relay. 255 = the console owns its own power.
+extern const uint8_t  POWER_KEEPALIVE_PIN;
+
+// Which level on that pin means "stay powered".
+//
+//   true  - a relay or transistor driven directly, as on a retrofit whose
+//           supply latches through one. Asserted by driving HIGH, released by
+//           driving LOW. Push-pull both ways.
+//   false - an ATX supply's PS_ON#, or anything else with its own pull-up.
+//           Asserted by driving LOW, released by going HI-Z and letting that
+//           pull-up take the line.
+//
+// The drive style is NOT a separate setting, because it is not a free choice.
+// ATX pulls PS_ON# up to +5VSB, and a Teensy 4.x pin is not 5V tolerant: a
+// push-pull HIGH there would put a 3.3V driver against a 5V rail. Active-low is
+// therefore always released open-drain. Active-high has no such constraint and
+// is driven both ways, which is more positive.
+//
+// Either way an unpowered or resetting board leaves the pin hi-Z, which reads
+// as released in both polarities -- so the supply drops on reset and during the
+// bootloader. That is correct in both cases, and it is why the console
+// power-cycles on every firmware upload.
+//
+// On an ATX console the momentary power switch is wired straight across PS_ON#
+// to ground, in parallel with this pin: holding it starts the supply with no
+// firmware involved, powerInit() then holds PS_ON# down itself, and the
+// organist lets go. Two pull-downs on one node, neither ever driving it high.
+//
+// The controller on such a console must NOT be powered from +5VSB. It has to
+// die with the supply, or it survives its own shutdown, never re-asserts
+// PS_ON#, and the next press holds the supply up only while the button is
+// held. Everything dies together so the next press is a cold boot. See
+// POWER-CONTROL.md.
+extern const bool     POWER_KEEPALIVE_ACTIVE_HIGH;
+
+// The console power switch, as an input bit address. Momentary. On the consoles
+// this was built for it is also the ON switch -- it bypasses the supply relay,
+// so it is held down throughout setup(); OrganPower ignores it until it has
+// been seen released once. ADDR_DISABLED = no power switch.
+extern const uint16_t POWER_SWITCH_ADDR;
+
+// How long that contact must read pressed CONTINUOUSLY before the shutdown
+// runs. One noisy scan must not be able to take the organ down mid-service.
+extern const uint32_t POWER_SWITCH_HOLD_MS;
+
+// Driven LOW to ask a host computer to halt; otherwise left hi-Z so the host's
+// own pull-up holds it high. Never driven HIGH, so no state of this board can
+// halt the host by accident. 255 = no host.
+extern const uint8_t  POWER_HOST_SHUTDOWN_PIN;
+
+// ACTIVE LOW, read with INPUT_PULLUP. The host pulls it DOWN to say "a shutdown
+// request will be honoured now", and releases it as it halts.
+//
+// Active low is not a style choice. A bare input floats, and a floating pin
+// reads whatever is in the air -- an unwired, unpowered or crashed host would
+// report ready at random, and a random "ready" cuts mains from a machine that
+// was never listening. With our pull-up, every one of those cases reads HIGH,
+// which is "not ready", which is the safe answer. It also matches the rest of
+// this design, where every signal asserts by pulling to ground. Gates the power switch, and its falling edge ends
+// the shutdown wait early. 255 = no wire, in which case "ready" means
+// powerBootComplete() has been called and the wait always runs the full
+// POWER_HOST_HALT_MS. Running the wire is strongly preferred: without it the
+// power switch does nothing until setup() has finished, which on a console with
+// STARTUP_WAIT_ENABLED means waiting for the sample engine to load.
+extern const uint8_t  POWER_HOST_READY_PIN;
+
+// Backstop for the halt wait, in ms. Used in full when there is no readiness
+// wire, and as an upper bound when there is. Measure the host's real halt time
+// and leave generous margin -- expiring early cuts mains mid-write.
+extern const uint32_t POWER_HOST_HALT_MS;
+
+// A complete framed SysEx message (0xF0 ... 0xF7) sent on the way down, after
+// the general cancel and before the host is asked to halt. For whatever else on
+// the instrument needs telling -- Opus 62 uses it to drop its blower relay. It
+// goes to usbMIDI and to the pipe mirror both. Set _LEN to 0 for none.
+extern const uint8_t  POWER_SHUTDOWN_SYSEX[];
+extern const uint16_t POWER_SHUTDOWN_SYSEX_LEN;
+
+// ---- Display misc ----
 extern const uint8_t  BACKLIGHT_PIN;
 extern const uint8_t  SCREEN1_BACKLIGHT_SECONDS;
 extern const bool     HIDE_CONFIG_SCREEN;

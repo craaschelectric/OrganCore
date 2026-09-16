@@ -15,6 +15,8 @@
 #include "TuningScreen.h"
 #include "TuningConfig.h"
 #include "PitchManager.h"
+#include "OrganPower.h"       // powerPoll() - the power switch works on every screen
+#include "ScanChain.h"        // scanAllChains() - powerPoll() reads inputBuffer
 #include "TempSensor.h"
 #include "Display.h"            // shared ui instance
 
@@ -54,6 +56,8 @@ void tuningScreenRun() {
         // nudge, strands its note-on, never hears the reply, and leaves
         // pulseActive true -- after which every further trim is a no-op on the
         // feedback path because recalcAndApply() guards on !pulseActive.
+        scanAllChains();            // refresh inputs so powerPoll() sees the switch
+        powerPoll();                // the power switch works on every screen
         uiGetTouchEvents();         // sampled every loop -> responsive touch
         usbMIDI.read();             // GrandOrgue's pitch reports arrive here
         tempSensorPoll();           // keep the temperature reading live

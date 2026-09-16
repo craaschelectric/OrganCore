@@ -8,4 +8,5 @@
 #include "CombinationConfig.h"
 #include "OrganConfig.h"
 #include "TuningConfig.h"
+#include "OrganPower.h"
 #endif

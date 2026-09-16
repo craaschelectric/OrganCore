@@ -29,6 +29,7 @@
 #include "RemapStore.h"
 #include "PistonAssignSlots.h"
 #include "PitchManager.h"       // pitchManagerPoll() - see the pump block below
+#include "OrganPower.h"       // powerPoll() - the power switch works on every screen
 #include "TempSensor.h"         // tempSensorPoll()   - see the pump block below
 #include "Display.h"            // shared ui instance
 
@@ -164,6 +165,7 @@ void pistonAssignScreenRun() {
         usbMIDI.read();             // GrandOrgue's pitch reports arrive here
         tempSensorPoll();           // keep the temperature reading live
         pitchManagerPoll();         // nudge note-offs and retry timeouts
+        powerPoll();                // the power switch works on every screen
 
         uint16_t slotAddr = assignCursorSlotAddr(&cur);
 

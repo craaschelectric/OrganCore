@@ -21,6 +21,8 @@
 #include "OrganCore.h"
 #include "ExpressionCalibration.h"
 #include "PitchManager.h"       // pitchManagerPoll() - see the pump block below
+#include "OrganPower.h"       // powerPoll() - the power switch works on every screen
+#include "ScanChain.h"        // scanAllChains() - powerPoll() reads inputBuffer
 #include "TempSensor.h"         // tempSensorPoll()   - see the pump block below
 #include "Display.h"            // shared ui instance
 
@@ -82,6 +84,8 @@ void expressionCalScreenRun() {
         // stranded on, the reply is lost, and pulseActive stays true -- after
         // which every later trim is a no-op, because recalcAndApply() guards
         // startPulseSequence() on !pulseActive.
+        scanAllChains();            // refresh inputs so powerPoll() sees the switch
+        powerPoll();                // the power switch works on every screen
         uiGetTouchEvents();         // every loop -> responsive touch
         usbMIDI.read();             // GrandOrgue's pitch reports arrive here
         tempSensorPoll();           // keep the temperature reading live

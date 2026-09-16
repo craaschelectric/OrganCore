@@ -64,6 +64,7 @@
 #include "TuningConfig.h"
 #include "TuningScreen.h"
 #include "PitchManager.h"      // pitchManagerPoll() - see the pump block in runConfigScreen()
+#include "OrganPower.h"       // powerPoll() - the power switch works on every screen
 #include "TempSensor.h"        // tempSensorPoll()   - see the pump block in runConfigScreen()
 
 #include <stdio.h>
@@ -647,6 +648,8 @@ static void runConfigScreen() {
             // is lost, and pulseActive stays true -- after which every later
             // trim is a no-op, because recalcAndApply() guards
             // startPulseSequence() on !pulseActive.
+            scanAllChains();            // refresh inputs so powerPoll() sees the switch
+            powerPoll();                // the power switch works on every screen
             uiGetTouchEvents();
             usbMIDI.read();             // GrandOrgue's pitch reports arrive here
             tempSensorPoll();           // keep the temperature reading live
