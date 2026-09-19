@@ -207,6 +207,13 @@ extern const uint8_t  TFT_ORIENTATION;
 // rotation of anything.
 extern const bool     TOUCH_INVERT_X;
 extern const bool     TOUCH_INVERT_Y;
+
+// Master enable for the touchscreen. false makes the panel inert everywhere --
+// the display still draws and the mirror tabs still track stop state, but no
+// touch is ever acted on. For a console plagued by phantom presses from a noisy
+// touch controller. Gate is in uiGetTouchEvents(), the one point every screen
+// samples through.
+extern const bool     TOUCH_ENABLED;
 extern const char* const displayLineLabel[];
 extern const uint8_t  SYSEX_SAVE_LINE_INDEX;
 extern const char     SYSEX_SAVE_TRIGGER[];
