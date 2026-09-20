@@ -134,7 +134,7 @@ static bool formatComboFile() {
     if (!organFS) return false;
     comboFile.close();
     organFS->remove(COMBO_FILENAME);
-    comboFile = organFS->open(COMBO_FILENAME, FILE_WRITE);
+    comboFile = organFS->open(COMBO_FILENAME, FILE_WRITE_BEGIN);
     if (!comboFile) return false;
 
     uint8_t h[COMBO_HEADER_SIZE];
@@ -179,7 +179,17 @@ static bool openOrCreateComboFile() {
     if (!organFS) return false;
     bool needFormat = !organFS->exists(COMBO_FILENAME);
 
-    comboFile = organFS->open(COMBO_FILENAME, FILE_WRITE);   // FILE_WRITE = O_RDWR|O_CREAT
+    // FILE_WRITE_BEGIN, not FILE_WRITE. On Teensy's FS.h, FILE_WRITE carries
+    // O_APPEND, which forces every write to end-of-file no matter where you
+    // seek -- and to keep an 8 MB random-access file consistent under append
+    // semantics, flush() ends up rewriting the whole file. That turned each
+    // 64-byte combination capture into a full-file rewrite: ~45 s at 182 KB/s
+    // on QSPI flash, with the data still landing correctly (so recall worked)
+    // but the console frozen the whole time. FILE_WRITE_BEGIN is O_RDWR|O_CREAT
+    // with no append, so seek() positions the write and flush() touches one
+    // block. This bit a QSPI console; SD masked it, which is why moving the file
+    // to SD would have 'fixed' it while leaving the defect in place.
+    comboFile = organFS->open(COMBO_FILENAME, FILE_WRITE_BEGIN);
     if (!comboFile) return false;
 
     if (!needFormat) {

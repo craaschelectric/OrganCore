@@ -84,7 +84,7 @@ static bool crescFormatFile() {
     if (!organFS) return false;
     crescFile.close();
     organFS->remove(CRESC_FILENAME);
-    crescFile = organFS->open(CRESC_FILENAME, FILE_WRITE);
+    crescFile = organFS->open(CRESC_FILENAME, FILE_WRITE_BEGIN);
     if (!crescFile) return false;
 
     uint8_t h[COMBO_HEADER_SIZE];
@@ -110,7 +110,10 @@ static bool crescFormatFile() {
 static bool crescOpenOrCreate() {
     if (!organFS) return false;
     bool needFormat = !organFS->exists(CRESC_FILENAME);
-    crescFile = organFS->open(CRESC_FILENAME, FILE_WRITE);   // O_RDWR|O_CREAT
+    // FILE_WRITE_BEGIN, not FILE_WRITE -- FILE_WRITE carries O_APPEND on Teensy,
+    // which turns a seeked record write into a whole-file rewrite on flush. Same
+    // defect fixed in CombinationSD.cpp; see the long note there.
+    crescFile = organFS->open(CRESC_FILENAME, FILE_WRITE_BEGIN);
     if (!crescFile) return false;
     if (!needFormat) {
         if (crescFile.size() != crescFileSize() || !crescValidateHeader()) needFormat = true;

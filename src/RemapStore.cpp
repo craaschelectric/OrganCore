@@ -71,7 +71,10 @@ static bool validateHeader(const uint8_t h[REMAP_HEADER_SIZE], uint16_t* countOu
 static bool writeFile() {
     if (!organFS) return false;
     organFS->remove(REMAP_FILENAME);
-    File f = organFS->open(REMAP_FILENAME, FILE_WRITE);   // O_RDWR | O_CREAT
+    // FILE_WRITE_BEGIN, not FILE_WRITE: FILE_WRITE's O_APPEND on Teensy defeats
+    // seek-based overwrite (see CombinationSD.cpp). This file is rewritten whole,
+    // but truncating/rewriting in place under O_APPEND is exactly what misbehaves.
+    File f = organFS->open(REMAP_FILENAME, FILE_WRITE_BEGIN);
     if (!f) return false;
 
     uint8_t h[REMAP_HEADER_SIZE];
