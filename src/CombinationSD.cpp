@@ -37,7 +37,16 @@
 #include "OrganStorage.h"     // organFS / organStorageMount() — the shared mount
 #include <stdio.h>
 
-static const char* COMBO_FILENAME = "COMB.DAT";
+// Per-combination files. Each memory level / piston pair is its own tiny 64-byte
+// file, named CB_<level4>_<pistonAddr4hex>.DAT, created on demand at capture.
+// This replaces the original single 8 MB COMB.DAT that stored every level x
+// piston record at a computed offset: on LittleFS/QSPI a seek-and-write into
+// that huge file walked the whole block chain on flush, so one capture took
+// ~45 s. A write to a 64-byte file has no chain to walk -- it is instant on
+// flash and on SD. There is no format step and no boot pre-zeroing: a piston
+// never set simply has no file, and recall of a missing file leaves the console
+// blank, which is the correct "nothing stored" behaviour.
+static const char* LEGACY_COMBO_FILENAME = "COMB.DAT";   // removed at mount if present
 
 // ============================================================
 // State (defines the externs from Combination.h and PistonHandler.h)
@@ -54,7 +63,6 @@ int8_t  sequencerPosition = -1;
 char    lastGeneralName[8] = "";
 bool    generalDisplayDirty = false;
 
-static File     comboFile;
 static uint32_t sequencerDebounceUntil = 0;
 static uint8_t  recordBuf[COMBO_RECORD_SIZE];
 
@@ -62,148 +70,32 @@ static uint8_t  recordBuf[COMBO_RECORD_SIZE];
 // SD file helpers
 // ============================================================
 
-static uint32_t comboFileSize() {
-    return (uint32_t)COMBO_HEADER_SIZE
-         + (uint32_t)COMBO_MEM_LEVELS * COMBO_PISTON_CAP * COMBO_RECORD_SIZE;
+// Build the filename for one (level, piston) combination. Flat namespace, no
+// directories -- the FS wrapper only promises exists()/open()/remove(), and a
+// flat name works identically on QSPI LittleFS and on SD.
+//
+// Keyed on the piston's INPUT ADDRESS (pistonAddr[i]), not its array index. The
+// address is a fixed hardware fact -- a given physical piston has the same
+// address forever -- whereas the index is a position in the piston table that
+// shifts whenever a piston is inserted or removed. Keying on the index would
+// silently rebind every stored combination past an inserted piston to the wrong
+// button. Keying on the address means a captured combination always recalls to
+// the same physical piston, no matter how the table is later edited. Address is
+// a 12-bit value (chain<<8 | word<<4 | bit), so %04X is exact.
+//
+// DUAL-INPUT PISTONS (thumb + toe for the same registration) are handled by the
+// REMAP table, NOT by two piston-table entries. Remap the toe's input address to
+// the thumb's, and give ONLY the thumb a piston-table entry. applyRemaps() moves
+// the toe's bit onto the thumb address and clears the toe before any handler
+// runs, so pressing either contact fires the thumb piston and this function sees
+// the thumb (canonical) address either way -- one file, CB_<level>_<thumbAddr>.
+// Do NOT give the toe its own piston entry: it would be a distinct address and a
+// distinct file, silently splitting one logical piston into two half-registered
+// combinations (thumb captures never recalled by toe, and vice versa).
+static void comboFileName(char* out, uint16_t level, uint8_t pistonIndex) {
+    snprintf(out, 20, "CB_%04u_%04X.DAT",
+             (unsigned)level, (unsigned)pistonAddr[pistonIndex]);
 }
-
-static uint32_t recordOffset(uint16_t level, uint8_t pistonIndex) {
-    return (uint32_t)COMBO_HEADER_SIZE
-         + ((uint32_t)level * COMBO_PISTON_CAP + pistonIndex) * COMBO_RECORD_SIZE;
-}
-
-// Read the 16-byte header and confirm magic, version, and the three caps match
-// this build's format. Any mismatch means blank the card.
-static bool validateHeader() {
-    uint8_t h[COMBO_HEADER_SIZE];
-    comboFile.seek(0);
-    if (comboFile.read(h, COMBO_HEADER_SIZE) != (int)COMBO_HEADER_SIZE) return false;
-
-    if (h[0] != COMBO_MAGIC_0 || h[1] != COMBO_MAGIC_1 ||
-        h[2] != COMBO_MAGIC_2 || h[3] != COMBO_MAGIC_3) return false;
-    if (h[4] != COMBO_FORMAT_VERSION) return false;
-
-    uint16_t stopCap   = (uint16_t)h[6]  | ((uint16_t)h[7]  << 8);
-    uint16_t pistonCap = (uint16_t)h[8]  | ((uint16_t)h[9]  << 8);
-    uint16_t levels    = (uint16_t)h[10] | ((uint16_t)h[11] << 8);
-    if (stopCap != COMBO_STOP_CAP)     return false;
-    if (pistonCap != COMBO_PISTON_CAP) return false;
-    if (levels != COMBO_MEM_LEVELS)    return false;
-
-    return true;
-}
-
-// Draw a "formatting" screen with a progress bar while the file is blanked.
-// The blank is a long, blocking operation on QSPI NOR (~1-3 min for the full
-// 8 MB, since each 4 KB sector must be erased), so this gives feedback instead
-// of a dead screen. Safe to call before the display is up: it no-ops until
-// displayInit() has run (displayReady). Draw the frame once (first=true), then
-// grow the fill on each whole-percent change.
-static void formatProgressDraw(uint8_t percent, bool first) {
-    if (!displayReady) return;   // display not initialised yet -> format silently
-
-    const int16_t barW = 240, barH = 22;
-    const int16_t barX = ui.displaySpaceCenterX - barW / 2;
-    const int16_t barY = ui.displaySpaceCenterY - barH / 2 + 6;
-
-    if (first) {
-        ui.drawTitleBar("Preparing Memory");
-        ui.clearDisplaySpace();
-        ui.lcdSetFont(Arial_10_Bold);
-        ui.lcdSetFontColor(LCD_WHITE);
-        ui.lcdSetCursorXY(ui.displaySpaceCenterX, barY - 26);
-        ui.lcdPrintCentered("Formatting combination memory");
-        ui.lcdDrawRectangle(barX, barY, barW, barH, LCD_WHITE);   // bar outline
-    }
-
-    int16_t fillW = (int16_t)(((int32_t)(barW - 4) * percent) / 100);
-    ui.lcdDrawFilledRectangle(barX + 2, barY + 2, fillW, barH - 4, LCD_WHITE);
-
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%u%%", (unsigned)percent);
-    ui.lcdDrawFilledRectangle(barX, barY + barH + 4, barW, 16, LCD_BLACK);   // clear old %
-    ui.lcdSetFontColor(LCD_WHITE);
-    ui.lcdSetCursorXY(ui.displaySpaceCenterX, barY + barH + 6);
-    ui.lcdPrintCentered(buf);
-}
-
-// Create (or overwrite) the file: write the header, then zero-fill every record.
-// An all-zero record is a blank piston (all stops off), so no per-record valid
-// flag is needed.
-static bool formatComboFile() {
-    if (!organFS) return false;
-    comboFile.close();
-    organFS->remove(COMBO_FILENAME);
-    comboFile = organFS->open(COMBO_FILENAME, FILE_WRITE_BEGIN);
-    if (!comboFile) return false;
-
-    uint8_t h[COMBO_HEADER_SIZE];
-    memset(h, 0, sizeof(h));
-    h[0] = COMBO_MAGIC_0; h[1] = COMBO_MAGIC_1;
-    h[2] = COMBO_MAGIC_2; h[3] = COMBO_MAGIC_3;
-    h[4] = COMBO_FORMAT_VERSION;
-    h[6]  = COMBO_STOP_CAP   & 0xFF; h[7]  = (COMBO_STOP_CAP   >> 8) & 0xFF;
-    h[8]  = COMBO_PISTON_CAP & 0xFF; h[9]  = (COMBO_PISTON_CAP >> 8) & 0xFF;
-    h[10] = COMBO_MEM_LEVELS & 0xFF; h[11] = (COMBO_MEM_LEVELS >> 8) & 0xFF;
-
-    comboFile.seek(0);
-    if (comboFile.write(h, COMBO_HEADER_SIZE) != (size_t)COMBO_HEADER_SIZE) return false;
-
-    uint8_t zeros[512];
-    memset(zeros, 0, sizeof(zeros));
-    const uint32_t total = (uint32_t)COMBO_MEM_LEVELS * COMBO_PISTON_CAP * COMBO_RECORD_SIZE;
-    uint32_t remaining = total;
-    uint8_t  lastPct = 255;
-
-    formatProgressDraw(0, true);
-    while (remaining > 0) {
-        uint16_t chunk = remaining >= 512 ? 512 : (uint16_t)remaining;
-        if (comboFile.write(zeros, chunk) != (size_t)chunk) return false;
-        remaining -= chunk;
-
-        uint8_t pct = (uint8_t)(((uint64_t)(total - remaining) * 100) / total);
-        if (pct != lastPct) { lastPct = pct; formatProgressDraw(pct, false); }
-    }
-    comboFile.flush();
-
-    // The format screen overpainted the run screen; ask for a full repaint so
-    // the next displayUpdate() restores it (harmless if the display isn't up).
-    if (displayReady) displayForceRepaint();
-
-    Serial.println("DBG: Combination file formatted (blanked)");
-    return true;
-}
-
-// Open the file for read+write, creating or blanking it as needed.
-static bool openOrCreateComboFile() {
-    if (!organFS) return false;
-    bool needFormat = !organFS->exists(COMBO_FILENAME);
-
-    // FILE_WRITE_BEGIN, not FILE_WRITE. On Teensy's FS.h, FILE_WRITE carries
-    // O_APPEND, which forces every write to end-of-file no matter where you
-    // seek -- and to keep an 8 MB random-access file consistent under append
-    // semantics, flush() ends up rewriting the whole file. That turned each
-    // 64-byte combination capture into a full-file rewrite: ~45 s at 182 KB/s
-    // on QSPI flash, with the data still landing correctly (so recall worked)
-    // but the console frozen the whole time. FILE_WRITE_BEGIN is O_RDWR|O_CREAT
-    // with no append, so seek() positions the write and flush() touches one
-    // block. This bit a QSPI console; SD masked it, which is why moving the file
-    // to SD would have 'fixed' it while leaving the defect in place.
-    comboFile = organFS->open(COMBO_FILENAME, FILE_WRITE_BEGIN);
-    if (!comboFile) return false;
-
-    if (!needFormat) {
-        if (comboFile.size() != comboFileSize() || !validateHeader()) {
-            needFormat = true;   // wrong size or foreign/old format -> blank
-        }
-    }
-    if (needFormat) return formatComboFile();
-    return true;
-}
-
-// ============================================================
-// Record bit access  (bit i = stop index i; byte i/8, bit i%8, LSB-first)
-// ============================================================
 
 static bool recordGetBit(const uint8_t* rec, uint16_t stopIndex) {
     return (rec[stopIndex >> 3] >> (stopIndex & 7)) & 1;
@@ -256,9 +148,16 @@ void combinationCapture(uint8_t pistonIndex) {
         if (stopCurrentTruth(s)) recordSetBit(recordBuf, s);
     }
 
-    comboFile.seek(recordOffset(combinationMemoryLevel, pistonIndex));
-    comboFile.write(recordBuf, COMBO_RECORD_SIZE);
-    comboFile.flush();
+    char name[20];
+    comboFileName(name, combinationMemoryLevel, pistonIndex);
+    File f = organFS->open(name, FILE_WRITE_BEGIN);
+    if (!f) {
+        Serial.print("DBG: Capture open failed "); Serial.println(name);
+        return;
+    }
+    f.seek(0);
+    f.write(recordBuf, COMBO_RECORD_SIZE);
+    f.close();
 
     Serial.print("DBG: Capture piston "); Serial.print(pistonIndex);
     Serial.print(" @level "); Serial.println(combinationMemoryLevel);
@@ -267,10 +166,19 @@ void combinationCapture(uint8_t pistonIndex) {
 void combinationRecall(uint8_t pistonIndex) {
     if (!combinationAvailable) return;
 
-    comboFile.seek(recordOffset(combinationMemoryLevel, pistonIndex));
-    if (comboFile.read(recordBuf, COMBO_RECORD_SIZE) != (int)COMBO_RECORD_SIZE) {
-        Serial.println("DBG: Recall short read, ignored");
-        return;
+    char name[20];
+    comboFileName(name, combinationMemoryLevel, pistonIndex);
+
+    // A piston that was never set at this level has no file. That is not an
+    // error: it means "nothing stored", so recall all stops OFF -- exactly the
+    // blank record the old preformatted file returned.
+    memset(recordBuf, 0, COMBO_RECORD_SIZE);
+    if (organFS->exists(name)) {
+        File f = organFS->open(name, FILE_READ);
+        if (f) {
+            f.read(recordBuf, COMBO_RECORD_SIZE);
+            f.close();
+        }
     }
 
     for (uint16_t s = 0; s < NUM_STOPS; s++) {
@@ -326,10 +234,13 @@ void combinationInit() {
         Serial.println("DBG: storage mount failed -> combination disabled");
         return;
     }
-    if (!openOrCreateComboFile()) {
-        combinationErrorText = "COMB FILE ERROR";
-        Serial.println("DBG: combination file open/create failed -> combination disabled");
-        return;
+    // No file to open or format: combinations are per-piston files created on
+    // demand at capture. Clear away the old 8 MB monolith if a previous firmware
+    // left one -- it is dead weight and its stored combinations do not carry over
+    // to the per-file scheme.
+    if (organFS->exists(LEGACY_COMBO_FILENAME)) {
+        organFS->remove(LEGACY_COMBO_FILENAME);
+        Serial.println("DBG: removed legacy COMB.DAT (per-file scheme now)");
     }
 
     combinationAvailable = true;

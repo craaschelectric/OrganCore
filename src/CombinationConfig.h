@@ -37,25 +37,29 @@
 // SD combination file format
 //
 // One flat, fixed-record binary file. Uniqueness of a (memory level, piston)
-// capture comes from a computed byte offset into a 2-D array laid out with
-// level as the major axis and piston as the minor axis:
+// As of 1.10.0 each combination is its own small file, not a record inside one
+// big file. A combination is CB_<level>_<pistonAddr>.DAT, a crescendo level is
+// CR_<level>.DAT, each a bare COMBO_RECORD_SIZE-byte bitmap with no header. This
+// replaced the single 8 MB COMB.DAT whose per-capture seek-and-write stalled for
+// ~45 s on QSPI LittleFS (block-chain walk on flush).
 //
-//   offset(level, piston) = COMBO_HEADER_SIZE
-//                         + (level * COMBO_PISTON_CAP + piston) * COMBO_RECORD_SIZE
-//
-// The layout uses FIXED caps (not the instrument's live NUM_STOPS/NUM_PISTONS),
-// so adding stops or pistons later never moves an existing record and stored
-// registrations survive untouched. That guarantee holds for APPEND-ONLY growth
-// of the stop/piston tables: inserting or reordering existing indices remaps
-// every bit and silently corrupts stored data (append-only discipline).
+// Two consequences of the filename keys:
+//   - Combinations key on the piston INPUT ADDRESS, not its table index, so
+//     inserting or reordering pistons no longer rebinds stored data to the wrong
+//     button. (The old offset model was safe only for append-only table growth;
+//     the address key is safe for any edit.)
+//   - A piston/level never set simply has no file; loading it yields an all-zero
+//     record, which is the correct "nothing stored" blank.
 // ============================================================
 
 constexpr uint16_t COMBO_STOP_CAP    = 512;   // bits per record (fixed)
-constexpr uint16_t COMBO_PISTON_CAP  = 128;   // records per level (fixed)
+constexpr uint16_t COMBO_PISTON_CAP  = 128;   // vestigial since 1.10.0 (per-file scheme); kept for tooling
 constexpr uint16_t COMBO_MEM_LEVELS  = 1024;  // memory levels (fixed, 2^10)
 
 constexpr uint16_t COMBO_RECORD_SIZE = COMBO_STOP_CAP / 8;   // 64 bytes
-constexpr uint8_t  COMBO_HEADER_SIZE = 16;
+constexpr uint8_t  COMBO_HEADER_SIZE = 16;   // vestigial since 1.10.0; no per-file has a header
+// COMBO_MAGIC_* and COMBO_FORMAT_VERSION below are vestigial since 1.10.0 -- no
+// per-file record has a header. Kept so external tooling still compiles; harmless.
 
 // Bit i of a record = stop index i is ON. Byte i/8, bit i%8, LSB-first.
 // (Stated explicitly so a future PC-side combination editor matches the firmware.)

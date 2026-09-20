@@ -5,20 +5,27 @@
 // LSB-first) with its own header magic "OCRC" and 31 records.
 
 #include "Crescendo.h"
-#include "CombinationConfig.h"   // COMBO_RECORD_SIZE / COMBO_STOP_CAP / COMBO_HEADER_SIZE
+#include "CombinationConfig.h"   // COMBO_RECORD_SIZE (the 64-byte record shape)
 #include "StopHandler.h"         // stopCommandedState, stopSetState, stopSendToEngine, stopEngineSuppressed
 #include "ScanChain.h"           // readInput / inputChanged (console SET piston)
 #include "ExpressionCalibration.h"
 #include "DisplayManager.h"      // currentScreen
 #include "OrganStorage.h"        // organFS / organStorageMount() — same medium as COMB.DAT
+#include <stdio.h>                // snprintf for the per-level filename
 
-static const char* CRESC_FILENAME = "CRESC.DAT";
+// Per-level crescendo files, mirroring the per-piston combination scheme (1.10.0).
+// Each level 1..31 is its own 64-byte file CR_<level>.DAT, created on demand when
+// that level is programmed. Replaces the single CRESC.DAT (a header plus 31
+// records at computed offsets), which had the same LittleFS/QSPI defect as the
+// old combo monolith: a seek-and-write into one file walks the block chain on
+// flush. Small here, so it never stalled as badly as combinations, but the fix
+// is the same and removes the boot-time format. A level never programmed has no
+// file; loading it yields an all-zero (unset) record, the old blank behaviour.
+static const char* LEGACY_CRESC_FILENAME = "CRESC.DAT";   // removed at init if present
 
-static const char    CRESC_MAGIC_0 = 'O';
-static const char    CRESC_MAGIC_1 = 'C';
-static const char    CRESC_MAGIC_2 = 'R';
-static const char    CRESC_MAGIC_3 = 'C';
-static const uint8_t CRESC_FORMAT_VERSION = 1;
+static void crescFileName(char* out, uint8_t level) {
+    snprintf(out, 20, "CR_%03u.DAT", (unsigned)level);
+}
 
 // A shoe resting on a bucket boundary must move at least this many ADC counts
 // before the level is allowed to change again — kills stop-thrash at the edge.
@@ -35,7 +42,6 @@ uint8_t crescendoProgLevel = 1;    // programming-screen displayed level (1..31)
 static uint8_t crescSlot   = 0xFF; // expression slot typed EXPR_CRESCENDO (0xFF = none)
 static uint16_t setPistonAddr = ADDR_DISABLED;  // console SET piston (for programming)
 
-static File     crescFile;
 static uint8_t  crescRecord[COMBO_RECORD_SIZE]; // cached record for the live operational level
 static bool     lastSentEffective[MAX_STOPS];   // what the engine was last told (while engaged)
 static uint16_t rawAtLastLevelChange = 0;       // hysteresis anchor
@@ -59,76 +65,19 @@ static bool inCrescendoScope(uint16_t s) {
 // SD file
 // ============================================================
 
-static uint32_t crescFileSize() {
-    return (uint32_t)COMBO_HEADER_SIZE + (uint32_t)CRESC_MAX_LEVEL * COMBO_RECORD_SIZE;
-}
-static uint32_t crescRecordOffset(uint8_t level) {   // level 1..31
-    return (uint32_t)COMBO_HEADER_SIZE + (uint32_t)(level - 1) * COMBO_RECORD_SIZE;
-}
-
-static bool crescValidateHeader() {
-    uint8_t h[COMBO_HEADER_SIZE];
-    crescFile.seek(0);
-    if (crescFile.read(h, COMBO_HEADER_SIZE) != (int)COMBO_HEADER_SIZE) return false;
-    if (h[0] != CRESC_MAGIC_0 || h[1] != CRESC_MAGIC_1 ||
-        h[2] != CRESC_MAGIC_2 || h[3] != CRESC_MAGIC_3) return false;
-    if (h[4] != CRESC_FORMAT_VERSION) return false;
-    uint16_t stopCap = (uint16_t)h[6] | ((uint16_t)h[7] << 8);
-    uint16_t levels  = (uint16_t)h[8] | ((uint16_t)h[9] << 8);
-    if (stopCap != COMBO_STOP_CAP)  return false;
-    if (levels  != CRESC_MAX_LEVEL) return false;
-    return true;
-}
-
-static bool crescFormatFile() {
-    if (!organFS) return false;
-    crescFile.close();
-    organFS->remove(CRESC_FILENAME);
-    crescFile = organFS->open(CRESC_FILENAME, FILE_WRITE_BEGIN);
-    if (!crescFile) return false;
-
-    uint8_t h[COMBO_HEADER_SIZE];
-    memset(h, 0, sizeof(h));
-    h[0] = CRESC_MAGIC_0; h[1] = CRESC_MAGIC_1; h[2] = CRESC_MAGIC_2; h[3] = CRESC_MAGIC_3;
-    h[4] = CRESC_FORMAT_VERSION;
-    h[6] = COMBO_STOP_CAP  & 0xFF; h[7] = (COMBO_STOP_CAP  >> 8) & 0xFF;
-    h[8] = CRESC_MAX_LEVEL & 0xFF; h[9] = (CRESC_MAX_LEVEL >> 8) & 0xFF;
-
-    crescFile.seek(0);
-    if (crescFile.write(h, COMBO_HEADER_SIZE) != (size_t)COMBO_HEADER_SIZE) return false;
-
-    uint8_t zeros[COMBO_RECORD_SIZE];
-    memset(zeros, 0, sizeof(zeros));
-    for (uint8_t l = 0; l < CRESC_MAX_LEVEL; l++) {
-        if (crescFile.write(zeros, COMBO_RECORD_SIZE) != (size_t)COMBO_RECORD_SIZE) return false;
-    }
-    crescFile.flush();
-    Serial.println("DBG: Crescendo file formatted (blanked)");
-    return true;
-}
-
-static bool crescOpenOrCreate() {
-    if (!organFS) return false;
-    bool needFormat = !organFS->exists(CRESC_FILENAME);
-    // FILE_WRITE_BEGIN, not FILE_WRITE -- FILE_WRITE carries O_APPEND on Teensy,
-    // which turns a seeked record write into a whole-file rewrite on flush. Same
-    // defect fixed in CombinationSD.cpp; see the long note there.
-    crescFile = organFS->open(CRESC_FILENAME, FILE_WRITE_BEGIN);
-    if (!crescFile) return false;
-    if (!needFormat) {
-        if (crescFile.size() != crescFileSize() || !crescValidateHeader()) needFormat = true;
-    }
-    if (needFormat) return crescFormatFile();
-    return true;
-}
-
 // Read a level's record into buf. Returns true if any bit is set (a stored,
 // non-blank level); false on an all-zero record (unset) or a read error.
 static bool crescLoadRecord(uint8_t level, uint8_t* buf) {
     memset(buf, 0, COMBO_RECORD_SIZE);
     if (!crescendoAvailable || level < 1 || level > CRESC_MAX_LEVEL) return false;
-    crescFile.seek(crescRecordOffset(level));
-    if (crescFile.read(buf, COMBO_RECORD_SIZE) != (int)COMBO_RECORD_SIZE) return false;
+    char name[20];
+    crescFileName(name, level);
+    if (!organFS->exists(name)) return false;         // never programmed -> unset
+    File f = organFS->open(name, FILE_READ);
+    if (!f) return false;
+    int n = f.read(buf, COMBO_RECORD_SIZE);
+    f.close();
+    if (n != (int)COMBO_RECORD_SIZE) { memset(buf, 0, COMBO_RECORD_SIZE); return false; }
     for (uint8_t i = 0; i < COMBO_RECORD_SIZE; i++) if (buf[i]) return true;
     return false;
 }
@@ -158,9 +107,12 @@ void crescendoInit() {
         Serial.println("DBG: Crescendo storage mount failed -> crescendo disabled");
         return;
     }
-    if (!crescOpenOrCreate()) {
-        Serial.println("DBG: Crescendo file open/create failed -> crescendo disabled");
-        return;
+    // No file to open or format: levels are per-file, created on demand at store.
+    // Clear away the old single CRESC.DAT if a previous firmware left one; its
+    // levels do not carry into the per-file scheme.
+    if (organFS->exists(LEGACY_CRESC_FILENAME)) {
+        organFS->remove(LEGACY_CRESC_FILENAME);
+        Serial.println("DBG: removed legacy CRESC.DAT (per-file scheme now)");
     }
     crescendoAvailable = true;
     Serial.print("DBG: Crescendo ready (shoe slot ");
@@ -297,9 +249,16 @@ void crescendoProgStore() {
     for (uint16_t s = 0; s < NUM_STOPS; s++) {
         if (inCrescendoScope(s) && stopCommandedState[s]) recordSetBit(rec, s);
     }
-    crescFile.seek(crescRecordOffset(crescendoProgLevel));
-    crescFile.write(rec, COMBO_RECORD_SIZE);
-    crescFile.flush();
+    char name[20];
+    crescFileName(name, crescendoProgLevel);
+    File f = organFS->open(name, FILE_WRITE_BEGIN);
+    if (!f) {
+        Serial.print("DBG: Crescendo store open failed "); Serial.println(name);
+        return;
+    }
+    f.seek(0);
+    f.write(rec, COMBO_RECORD_SIZE);
+    f.close();
     Serial.print("DBG: Crescendo store level "); Serial.println(crescendoProgLevel);
 
     // Auto-increment (clamp at 31), then recall the new level if it is set.
