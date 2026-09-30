@@ -46,6 +46,13 @@ constexpr uint8_t PISTON_TYPE_SHIFT      = 6;
 constexpr uint8_t PISTON_TYPE_MEM_UP     = 7;  // local-SD combination
 constexpr uint8_t PISTON_TYPE_MEM_DOWN   = 8;
 constexpr uint8_t PISTON_TYPE_MEM_ZERO   = 9;
+// TUTTI (1.11.0): a general-scope piston that is NOT part of the NEXT/PREV
+// sequence and holds ONE registration shared by every memory level. With local
+// combination memory (COMBINATION_MODE_SD) it captures with SET and recalls
+// locally, always stored at level 0 (CB_0000_<addr>.DAT) whatever level is
+// showing. Without local memory (COMBINATION_MODE_HW) it is sent to the host
+// exactly like a general. Never list a TUTTI in sequencerPistonList.
+constexpr uint8_t PISTON_TYPE_TUTTI      = 10;
 
 // ---- Builder piston-assignment virtual slots (FROZEN LAYOUT) ----
 // Canonical destination addresses for the SD-backed builder-assignable remap

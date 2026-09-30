@@ -92,7 +92,12 @@ static uint8_t  recordBuf[COMBO_RECORD_SIZE];
 // Do NOT give the toe its own piston entry: it would be a distinct address and a
 // distinct file, silently splitting one logical piston into two half-registered
 // combinations (thumb captures never recalled by toe, and vice versa).
+//
+// TUTTI is level-independent: it always uses level 0, so one registration serves
+// every memory level. No clash with a level-0 general -- the address is part of
+// the name, and the TUTTI's address is its own.
 static void comboFileName(char* out, uint16_t level, uint8_t pistonIndex) {
+    if (pistonType[pistonIndex] == PISTON_TYPE_TUTTI) level = 0;
     snprintf(out, 20, "CB_%04u_%04X.DAT",
              (unsigned)level, (unsigned)pistonAddr[pistonIndex]);
 }
@@ -114,7 +119,8 @@ static void recordSetBit(uint8_t* rec, uint16_t stopIndex) {
 // is never stored on the card.)
 static bool stopInScope(uint8_t pistonIndex, uint16_t stopIndex) {
     uint8_t flags = stopFlags[stopIndex];
-    if (pistonType[pistonIndex] == PISTON_TYPE_GENERAL) {
+    if (pistonType[pistonIndex] == PISTON_TYPE_GENERAL ||
+        pistonType[pistonIndex] == PISTON_TYPE_TUTTI) {        // TUTTI = general scope
         return (flags & STOP_IN_GENERALS) != 0;
     }
     if (pistonType[pistonIndex] == PISTON_TYPE_DIVISIONAL) {
@@ -339,6 +345,19 @@ void processPistons() {
                             }
                         }
                     }
+                }
+                break;
+
+            case PISTON_TYPE_TUTTI:
+                // Like a general, but outside the sequence (sequencerPosition is
+                // left alone, so NEXT continues from the last general) and at a
+                // fixed level (see comboFileName).
+                if (setHeld) {
+                    combinationCapture(i);
+                } else {
+                    combinationRecall(i);
+                    strcpy(lastGeneralName, "TUTTI");
+                    generalDisplayDirty = true;
                 }
                 break;
 

@@ -260,6 +260,16 @@ void processPistons() {
                     break;
                 }
 
+                case PISTON_TYPE_TUTTI:
+                    // No local memory: sent to the host exactly like a general,
+                    // but it is not in the sequence, so the position is kept.
+                    sendPistonOn(i);
+                    strcpy(lastGeneralName, "TUTTI");
+                    generalDisplayDirty = true;
+                    Serial.print("DBG: Tutti piston ");
+                    Serial.println(i);
+                    break;
+
                 case PISTON_TYPE_DIVISIONAL:
                     sendPistonOn(i);
                     Serial.print("DBG: Divisional ");
@@ -294,6 +304,7 @@ void processPistons() {
             // --- Release: send NoteOff for pistons that sent NoteOn ---
             switch (pistonType[i]) {
                 case PISTON_TYPE_GENERAL:
+                case PISTON_TYPE_TUTTI:
                 case PISTON_TYPE_DIVISIONAL:
                 case PISTON_TYPE_GC:
                     sendPistonOff(i);

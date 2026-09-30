@@ -42,15 +42,23 @@ void processExpressions() {
             // come from the EEPROM-backed calibration (defaults seeded from the
             // ConfigData exprAnalogMin/Max on first boot), set on the config
             // screen and persisted there.
+            //
+            // Min is the reading for "closed" (0) and Max the reading for "full"
+            // (31), whichever voltage each is. A shoe wired reversed calibrates
+            // with Min above Max and is scaled in reverse (1.11.1). Only Min ==
+            // Max is degenerate (no travel): held at 0 until re-calibrated.
             uint16_t lo = calibratedExprMin[i];
             uint16_t hi = calibratedExprMax[i];
-            if (hi <= lo) {
-                // Degenerate calibration (Min captured >= Max): avoid divide by
-                // zero, treat the pedal as fully closed until re-calibrated.
+            if (hi == lo) {
                 value = 0;
-            } else {
+            } else if (hi > lo) {
+                // Normal: reading rises from closed to full.
                 uint16_t clamped = raw < lo ? lo : (raw > hi ? hi : raw);
                 value = (uint8_t)(((uint32_t)(clamped - lo) * 31) / (hi - lo));
+            } else {
+                // Reversed: reading falls from closed (lo) to full (hi).
+                uint16_t clamped = raw > lo ? lo : (raw < hi ? hi : raw);
+                value = (uint8_t)(((uint32_t)(lo - clamped) * 31) / (lo - hi));
             }
             
         } else {

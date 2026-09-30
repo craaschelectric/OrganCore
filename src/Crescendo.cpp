@@ -129,12 +129,17 @@ static uint8_t crescLevelFromShoe() {
     uint16_t lo  = calibratedExprMin[crescSlot];
     uint16_t hi  = calibratedExprMax[crescSlot];
 
+    // Min = reading at crescendo off, Max = reading at full, whichever voltage
+    // each is; a reversed shoe (Min above Max) is scaled in reverse (1.11.1).
     uint8_t candidate;
-    if (hi <= lo) {
-        candidate = 0;                         // degenerate calibration -> off
-    } else {
+    if (hi == lo) {
+        candidate = 0;                         // no travel captured -> off
+    } else if (hi > lo) {
         uint16_t clamped = raw < lo ? lo : (raw > hi ? hi : raw);
         candidate = (uint8_t)(((uint32_t)(clamped - lo) * CRESC_MAX_LEVEL) / (hi - lo)); // 0..31
+    } else {
+        uint16_t clamped = raw > lo ? lo : (raw < hi ? hi : raw);
+        candidate = (uint8_t)(((uint32_t)(lo - clamped) * CRESC_MAX_LEVEL) / (lo - hi)); // reversed
     }
 
     if (candidate == crescendoLevel) return crescendoLevel;
