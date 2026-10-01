@@ -9,10 +9,10 @@
 // by construction.
 //
 // In practice nobody edits it: local-SD is the default and every current console
-// uses it. Everything else that used to live here -- the storage medium and the
-// builder piston-assignment enable -- is now ordinary instrument config in
-// OrganConfig.h (COMBINATION_USE_SPIFLASH, PISTON_ASSIGN_ENABLED), decided at run
-// time. A library header should never need editing to move between consoles.
+// uses it. The storage medium, which used to live here too, is now ordinary
+// instrument config in OrganConfig.h (COMBINATION_USE_SPIFLASH), decided at run
+// time. (The builder piston-assignment switch also lived here; that feature was
+// removed in 1.12.0.) A library header should never need editing to move between consoles.
 #ifndef ORGANCORE_COMBINATIONCONFIG_H
 #define ORGANCORE_COMBINATIONCONFIG_H
 
@@ -23,15 +23,6 @@
 #define ORGAN_COMBINATION_MODE COMBINATION_MODE_SD
 #endif
 
-// ---- Derived: is the builder piston-assignment CODE compiled in? ----
-// The store, the assign screen and the boot-time REMAP.DAT load exist only in
-// local-capture mode -- in HW mode there is no SD card and Hauptwerk owns the
-// combination action, so they have nothing to attach to. That is the only
-// condition now: whether a given console OFFERS the feature is
-// PISTON_ASSIGN_ENABLED in its config data, checked at run time.
-#if ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD
-#define ORGANCORE_HAS_REMAP_STORE 1
-#endif
 
 // ============================================================
 // SD combination file format

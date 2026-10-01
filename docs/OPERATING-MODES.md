@@ -86,13 +86,14 @@ layout is byte-identical on both media — only `begin()` differs.
 
 - **`false` — SD card.** `SD.begin(COMBINATION_SD_CS)`, defaulting to `BUILTIN_SDCARD`
   (override with `-DCOMBINATION_SD_CS=<pin>` for an external SPI card).
-- **`true` — on-board QSPI flash.** `LittleFS_QSPIFlash` on the Teensy 4.1 back-side pads.
-  Assumes a 16 MB part, which holds the full 8 MB file with no geometry change.
+- **`true` — on-board QSPI flash.** `OrganQSPIFlash` (1.12.0) on the Teensy 4.1 back-side
+  pads: OrganCore's own copy of LittleFS's QSPI NOR back-end, carrying the full stock chip
+  table plus the Boya BY25Q128ES, so no patched LittleFS is needed. NOR only. An absent or
+  unknown chip prints its JEDEC ID on the serial line at mount.
 
-The setting covers **every** file the console keeps — `COMB.DAT`, `CRESC.DAT` and
-`REMAP.DAT` — so a flash console keeps its crescendo and its builder piston assignment.
-(Before 1.7.0 the latter two were stranded on the card and a flash console silently lost
-both.) The mount itself lives in `OrganStorage`: `organStorageMount()` is idempotent and
+The setting covers **every** file the console keeps — the combination and crescendo files —
+so a flash console keeps its crescendo. (Before 1.7.0 the crescendo was stranded on the card
+and a flash console silently lost it.) The mount itself lives in `OrganStorage`: `organStorageMount()` is idempotent and
 `organFS` points at whichever medium came up, so `combinationInit()` and `crescendoInit()`
 can run in either order and only the first one actually mounts.
 
@@ -289,14 +290,36 @@ from the config menu.
 
 Config menu entries, in order, appearing or not according to config so nothing overlaps:
 
-1. **Expression Calibration** — blocking; captures per-shoe analog min/max into EEPROM
+1. **Expression Calibration** — blocking; captures per-shoe analog min/max into EEPROM, for
+   swell and crescendo shoes alike (the crescendo shoe was missing before 1.12.0)
    (`calibratedExprMin/Max` become the live values, the const `exprAnalogMin/Max` arrays are
    just the first-boot defaults).
 2. **Crescendo Program** — hands off to `SCREEN_CRESCENDO` and returns.
-3. **Assign Pistons** — only when the feature is compiled in *and* `PISTON_ASSIGN_ENABLED`
-   (section 7).
-4. **Tuning / Temperature** — only when `ORGAN_TUNING_PRESENT`.
-5. **Back.**
+3. **Tuning / Temperature** — only when `ORGAN_TUNING_PRESENT`.
+4. **Back.**
+
+### Piston-driven display (`TOUCH_ENABLED` false, 1.12.0)
+
+With touch off, the console's pistons drive the display instead (`PistonMenu.*`).
+
+- **Run screen.** No Config button and no memory buttons; the memory level is a bare readout.
+  No on-screen stops: a tab whose stop is `STOP_SCREEN` is not drawn, because nothing could
+  operate it. Tabs that mirror a real console stop are drawn read-only and still lamp from
+  `stopCommandedState[]`. With no tabs left, the expanded layout is used, moved up into the
+  space the buttons occupied.
+- **Opening the menu.** Hold **SET** and press **GENERAL CANCEL**. That press does not cancel
+  (in HW mode it is not sent to the host). The combination back-end sets
+  `displayMenuRequested`; `displayUpdate()` runs the blocking menu. No sketch change.
+- **Controls, every screen.** SET acts; GENERAL CANCEL goes back; MEM+/MEM− move in a list,
+  falling back to NEXT/PREV; NEXT/PREV step a value, falling back to MEM+/MEM−. Lists wrap,
+  so a console with one piston of a pair still works.
+- **Items.** *Calibrate Shoes* — every analog shoe, the crescendo shoe included; SET on a
+  Min/Max cell captures the live reading, SET on Save writes EEPROM, GC leaves unsaved.
+  *Crescendo* — when present; recalls level 1, the step pistons move between levels, SET
+  stores and advances, GC leaves; the stop handlers keep running so drawknobs work. *Tuning* —
+  when `ORGAN_TUNING_PRESENT`; the step pistons trim, SET resets the trim, GC leaves.
+- All three are blocking; the keyboards do not play while the menu is open. On leaving,
+  `setHeld` is re-read from the SET piston, since its release happened inside the menu.
 
 ### Orientation and touch inversion
 
@@ -343,42 +366,12 @@ Two more screens exist outside that state machine:
 
 ## 7. Builder piston assignment mode
 
-Lets a builder assign the console's pistons and control buttons **in the field, without
-recompiling**: park on a logical function, press the physical button(s) that should trigger
-it.
-
-Availability is two conditions:
-
-- Compiled in only in local-combination mode — `ORGANCORE_HAS_REMAP_STORE` is defined when
-  `ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD`. Every consumer guards its `#include`s on
-  it, so a HW-mode build doesn't need `RemapStore.*`, `PistonAssignScreen.*` or
-  `PistonAssignSlots.h` present at all.
-- Offered at run time when `PISTON_ASSIGN_ENABLED`. False is the usual case for a console
-  whose input map is fully defined in config data: no menu entry, no `REMAP.DAT` load, and
-  `applyRemaps()` uses only the const `remapFrom[]`/`remapTo[]`. `REMAP.DAT` follows
-  `COMBINATION_USE_SPIFLASH` like every other file, so a flash console gets the feature too.
-
-**Canonical slots.** Every assignable function has one fixed address on a reserved virtual
-chain (`REMAP_SLOT_CHAIN` = 11, the top of the widened `MAX_CHAINS = 12` space, so real
-chains growing upward from 0 never collide). Calibration never rewrites the piston list; it
-appends remap entries `{pressed physical addr → slot addr}`, and `applyRemaps()` funnels each
-press onto its slot before any handler runs. Several physical buttons can funnel onto one
-slot (a General Cancel on both the rail and a toe stud). Captures come from all input chains
-including virtual ones — a MIDI pedalboard's embedded pistons must be assignable — and only
-the slot chain itself is excluded, being a destination.
-
-**The layout is frozen**, exactly like the combination record layout: stored `to` addresses
-are computed from it, so changing a cap or stride renumbers slots and silently corrupts
-saved assignments. In walk order: 7 known controls (Set, GC, Next, Prev, Mem+, Mem−, Shift),
-64 generals, 128 divisionals (8 divisions × 16, division-major, frozen order 0 Pedal,
-1 Great, 2 Swell, 3 Choir, 4 Solo), 12 spare controls — 211 of 256 bits. To grow: append a
-new block at a fresh range, never widen one in place, and bump `REMAP_FORMAT_VERSION`.
-
-**Storage semantics.** `REMAP.DAT`, on the same medium as `COMB.DAT` (magic `OCRM`, versioned, slot chain and `MAX_REMAPS`
-validated), loaded at the end of `combinationInit()`. A **missing file means
-never-calibrated** → the const defaults stay in effect. A **valid zero-count file means
-deliberately cleared** (Start Over) → the empty table wins. A foreign, old or truncated file
-is blanked.
+**Removed in 1.12.0.** The *Assign Pistons* screen, `REMAP.DAT`, `RemapStore`,
+`PistonAssignScreen`, `PistonAssignSlots.h`, the `REMAP_SLOT_*` layout and
+`PISTON_ASSIGN_ENABLED` are gone. No console used it in service. Duplicate buttons are still
+merged by the const `remapFrom[]`/`remapTo[]` tables through `applyRemaps()`. A
+`ConfigData.cpp` that still defines `PISTON_ASSIGN_ENABLED` builds unchanged; the value is
+simply unused.
 
 ---
 
@@ -439,9 +432,9 @@ global to the machine rather than per sketch.
 | Combination action (HW / local) | `ORGAN_COMBINATION_MODE` | compile |
 | Debug prints | `DEBUG_ENABLED` | compile |
 | Storage medium, all files (SD / QSPI) | `COMBINATION_USE_SPIFLASH` | boot |
-| Piston assignment offered | `PISTON_ASSIGN_ENABLED` | boot / run |
 | Display orientation | `TFT_ORIENTATION` | boot |
 | Touch axis inversion | `TOUCH_INVERT_X`, `TOUCH_INVERT_Y` | boot |
+| Touch or piston-driven display | `TOUCH_ENABLED` | boot |
 | Tuning present | `ORGAN_TUNING_PRESENT` | run |
 | Tuning transport | `PITCH_PULSE_ENABLED`, `PITCH_SEND_TUNING_SYSEX` | run |
 | Startup handshake | `STARTUP_WAIT_ENABLED` | boot |

@@ -1,5 +1,6 @@
 // DisplayManager.h
-// Touchscreen UI for an organ console: a run screen (memory control band
+// Touchscreen UI for an organ console (or, with TOUCH_ENABLED false, a
+// piston-driven one -- see DisplayManager.cpp and PistonMenu.h): a run screen (memory control band
 // with -32/-1/level/+1/+32, last-general name, and a 4x2 grid of the first 8
 // screen-stop tabs) and a config screen (small menu that currently offers
 // expression calibration and, on tuning builds, tuning/temperature). Built on
@@ -35,6 +36,12 @@ void displayUpdate();
 void displayProcessTouch();
 bool displayPowerShouldBeOn();
 bool displayScanChainsActive();
+
+// Piston-driven mode (TOUCH_ENABLED false): set by the combination back-end
+// when the organist holds SET and presses GENERAL CANCEL. That press does not
+// cancel; displayUpdate() sees the flag and runs the blocking piston menu.
+// Never set with touch on.
+extern bool displayMenuRequested;
 
 // Force a full run-screen repaint on the next displayUpdate(). Used after a
 // blocking screen (e.g. the startup wait) has overpainted the run screen.

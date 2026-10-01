@@ -9,27 +9,14 @@
 
 #include "OrganCore.h"
 #include "ScanChain.h"
-#include "CombinationConfig.h"   // ORGANCORE_HAS_REMAP_STORE
-#ifdef ORGANCORE_HAS_REMAP_STORE
-#include "RemapStore.h"
-#endif
 
-// Source selection: in local-capture (SD) mode, once a valid REMAP.DAT has been
-// loaded, the builder-assigned live table is the remap source. Otherwise (HW
-// mode, or SD mode with no file yet) the const remapFrom[]/remapTo[] from
-// OrganConfig.h are used. The merge logic below is identical for both — only the
-// array pointers and count differ.
+// Duplicate-button merge from the const remapFrom[]/remapTo[] tables in the
+// instrument config. (Before 1.12.0 a builder-assigned REMAP.DAT could replace
+// these tables at run time; that feature has been removed.)
 inline void applyRemaps() {
-#ifdef ORGANCORE_HAS_REMAP_STORE
-    const bool      remapLive = remapSourceIsLive();
-    const uint16_t* fromArr   = remapLive ? liveRemapFrom : remapFrom;
-    const uint16_t* toArr     = remapLive ? liveRemapTo   : remapTo;
-    const uint16_t  remapN    = remapLive ? liveNumRemaps : NUM_REMAPS;
-#else
     const uint16_t* fromArr   = remapFrom;
     const uint16_t* toArr     = remapTo;
     const uint16_t  remapN    = NUM_REMAPS;
-#endif
 
     for (uint16_t i = 0; i < remapN; i++) {
         uint16_t from = fromArr[i];

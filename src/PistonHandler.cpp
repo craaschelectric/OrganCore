@@ -293,6 +293,13 @@ void processPistons() {
                     break;
 
                 case PISTON_TYPE_GC:
+                    // Piston-driven display (TOUCH_ENABLED false): SET held + GC
+                    // opens the config menu instead of sending General Cancel to
+                    // the host. No note-on is sent, so the release sends nothing.
+                    if (!TOUCH_ENABLED && setHeld) {
+                        displayMenuRequested = true;
+                        break;
+                    }
                     sendPistonOn(i);
                     lastGeneralName[0] = '\0';
                     sequencerPosition = -1;

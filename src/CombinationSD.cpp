@@ -29,9 +29,6 @@
 #include "ScanChain.h"
 #include "PersistentConfig.h"
 #include "Debug.h"
-#ifdef ORGANCORE_HAS_REMAP_STORE
-#include "RemapStore.h"       // builder piston-assign store; init after the card is mounted
-#endif
 #include "Display.h"          // shared 'ui' for the format progress screen
 #include "DisplayManager.h"   // displayReady, displayForceRepaint
 #include "OrganStorage.h"     // organFS / organStorageMount() — the shared mount
@@ -252,14 +249,6 @@ void combinationInit() {
     combinationAvailable = true;
     Serial.print("DBG: Combination ready @level "); Serial.println(combinationMemoryLevel);
 
-#ifdef ORGANCORE_HAS_REMAP_STORE
-    // Storage is up; if this console offers builder piston assignment, load the
-    // table from the same medium the combination file uses. Missing REMAP.DAT
-    // (or the feature switched off) leaves the const remap defaults in effect.
-    if (PISTON_ASSIGN_ENABLED) {
-        remapStoreInit();
-    }
-#endif
 }
 
 // ============================================================
@@ -376,6 +365,13 @@ void processPistons() {
                 break;
 
             case PISTON_TYPE_GC:
+                // Piston-driven display (TOUCH_ENABLED false): SET held + GC
+                // opens the config menu instead of cancelling. displayUpdate()
+                // runs it; nothing is cancelled and the general line is kept.
+                if (!TOUCH_ENABLED && setHeld) {
+                    displayMenuRequested = true;
+                    break;
+                }
                 combinationCancel();
                 lastGeneralName[0] = '\0';
                 sequencerPosition = -1;

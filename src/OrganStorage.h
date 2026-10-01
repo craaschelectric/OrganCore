@@ -1,21 +1,20 @@
 // OrganStorage.h  -  the console's one filesystem.
 //
-// Every file the console keeps -- COMB.DAT, CRESC.DAT, REMAP.DAT -- lives on
+// Every file the console keeps -- the combination and crescendo files -- lives on
 // the same medium, chosen by COMBINATION_USE_SPIFLASH in the instrument config:
 // the SD card (false) or the Teensy 4.1 on-board QSPI flash via LittleFS (true).
 //
 // This exists because three modules need that filesystem and only one of them
 // can own the mount. CombinationSD.cpp used to own it privately, so Crescendo
-// and RemapStore were written against the global SD object and stayed on the
-// card no matter what COMBINATION_USE_SPIFLASH said -- which made a flash
-// console silently lose its crescendo and its builder piston assignment. The
+// was written against the global SD object and stayed on the card no matter
+// what COMBINATION_USE_SPIFLASH said -- which made a flash console silently
+// lose its crescendo. The
 // mount now lives here, both media are always compiled, and organFS points at
 // whichever one came up.
 //
 // organStorageMount() is idempotent: whichever module runs first mounts, the
 // rest get the same handle back. So there is no required ordering between
-// combinationInit() and crescendoInit(). (remapStoreInit() is still called from
-// the end of combinationInit(), where it always was.)
+// combinationInit() and crescendoInit().
 #ifndef ORGANCORE_ORGANSTORAGE_H
 #define ORGANCORE_ORGANSTORAGE_H
 

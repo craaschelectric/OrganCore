@@ -46,6 +46,23 @@
 // it is open, currentScreen == SCREEN_CONFIG and displayScanChainsActive()
 // returns false, so the main loop pauses scanning and the blocking screen owns
 // the CPU. That is fine during config -- the instrument is not being played.
+//
+// PISTON-DRIVEN MODE (TOUCH_ENABLED == false, 1.12.0). The touch layer is off
+// and the console's own pistons drive the display instead; the menu and its
+// screens live in PistonMenu.cpp. On the run screen:
+//   - No Config button and no memory buttons; the memory level is a bare
+//     readout (full width in the compact layout, and in the expanded layout the
+//     lines move up into the space the four big buttons used).
+//   - No on-screen stops. A screen-stop tab whose stop is STOP_SCREEN (a stop
+//     that exists only as a touch target) is not drawn, since nothing could
+//     operate it. Tabs that MIRROR a real console stop (screenStopIndex[] points
+//     at a stop with a physical contact or a host-driven state) are still drawn,
+//     read-only, lamping from stopCommandedState[] as always. If no tabs remain
+//     the expanded layout is used.
+//   - The menu opens when the organist holds SET and presses GENERAL CANCEL.
+//     The combination back-end (CombinationSD.cpp / PistonHandler.cpp) sees the
+//     chord, does NOT cancel, and sets displayMenuRequested; displayUpdate()
+//     then runs the blocking menu. So a sketch needs nothing new in loop().
 
 #include "DisplayManager.h"
 #include "Display.h"            // shared ui instance
@@ -55,12 +72,9 @@
 #include "StopHandler.h"       // stopCommandedState[]
 #include "PistonHandler.h"     // lastGeneralName, generalDisplayDirty
 #include "Combination.h"       // combinationAvailable/MemoryLevel/ErrorText, combinationMemStep
-#include "CombinationConfig.h" // ORGANCORE_HAS_REMAP_STORE (governs the assign-screen include below)
 #include "Crescendo.h"         // crescendo overlay level + programming screen API
 #include "ExpressionCalScreen.h"
-#ifdef ORGANCORE_HAS_REMAP_STORE
-#include "PistonAssignScreen.h"   // builder piston assignment (only when the feature is compiled in)
-#endif
+#include "PistonMenu.h"         // the TOUCH_ENABLED=false (piston-driven) menu and screens
 #include "TuningConfig.h"
 #include "TuningScreen.h"
 #include "PitchManager.h"      // pitchManagerPoll() - see the pump block in runConfigScreen()
@@ -113,6 +127,16 @@ static const int GRID_COLS = 4;
 static const int GRID_ROWS = 2;
 static uint8_t   numTabs   = 0;
 
+// Which screen stop each drawn tab shows: tab position p paints screen stop
+// tabSlot[p] (an index into screenStopIndex[] / screenStopName[]). With touch
+// on this is simply p. In piston-driven mode STOP_SCREEN stops are skipped, so
+// the mirrors that remain close up into consecutive positions.
+static uint8_t   tabSlot[MAX_TABS];
+
+// Set by the combination back-end when SET+GENERAL CANCEL is pressed in
+// piston-driven mode; consumed by displayUpdate(). See DisplayManager.h.
+bool displayMenuRequested = false;
+
 // Config button: a tappable rect at the right end of the title bar.
 static const int CFG_BTN_W = 60;
 static const int CFG_BTN_H = TITLE_H - 4;
@@ -159,16 +183,19 @@ static const int BIG_M1_X     = TAB_GAP + (TAB_W + TAB_GAP);    // 82
 static const int BIG_P1_X     = TAB_GAP + 2 * (TAB_W + TAB_GAP);// 161
 static const int BIG_P100_X   = TAB_GAP + 3 * (TAB_W + TAB_GAP);// 240
 
-static const int BIG_MEM_Y    = BIG_BTN_Y + BIG_BTN_H + 4;      // 106
-static const int BIG_MEM_H    = 48;                             // 106..154 (Arial_40_Bold, full width)
-static const int BIG_GEN_Y    = BIG_MEM_Y + BIG_MEM_H + 2;      // 156
-static const int BIG_GEN_H    = 32;                             // 156..188 (Arial_24_Bold)
+// The line Y positions are variables, not consts, because piston-driven mode
+// (TOUCH_ENABLED false) has no button row and moves every line up -- see
+// displayInit(). The values here are the touch layout.
+static const int BIG_MEM_H    = 48;                             // Arial_40_Bold, full width
+static const int BIG_GEN_H    = 32;                             // Arial_24_Bold
 static const int BIG_SET_W    = 76;                             // SET field at the right end of the general line
 static const int BIG_SET_X    = SCREEN_W - BIG_SET_W - 4;       // 240
-static const int BIG_CRESC_Y  = BIG_GEN_Y + BIG_GEN_H + 2;      // 190
-static const int BIG_CRESC_H  = 24;                             // 190..214 (Arial_20_Bold)
-static const int BIG_ERR_Y    = BIG_CRESC_Y + BIG_CRESC_H + 2;  // 216
-static const int BIG_ERR_H    = SCREEN_H - BIG_ERR_Y;           // 216..240 (Arial_20_Bold)
+static const int BIG_CRESC_H  = 24;                             // Arial_20_Bold
+static int bigMemY   = BIG_BTN_Y + BIG_BTN_H + 4;               // 106 (touch) / 44 (pistons)
+static int bigGenY   = bigMemY + BIG_MEM_H + 2;                 // 156 / 94
+static int bigCrescY = bigGenY + BIG_GEN_H + 2;                 // 190 / 128
+static int bigErrY   = bigCrescY + BIG_CRESC_H + 2;             // 216 / 154
+static int bigErrH   = 24;                                      // Arial_20_Bold
 
 // Colors (set in displayInit once ui exists).
 static uint16_t COLOR_TAB_ON;
@@ -230,7 +257,8 @@ static void tabRect(uint8_t t, int& x, int& y, int& w, int& h) {
 
 // Draw one tab reflecting the stop's commanded (lamp) state.
 static void paintTab(uint8_t t) {
-    uint16_t stopIdx = screenStopIndex[t];
+    uint8_t  slot    = tabSlot[t];
+    uint16_t stopIdx = screenStopIndex[slot];
     bool on = stopCommandedState[stopIdx];
 
     int x, y, w, h;
@@ -249,9 +277,9 @@ static void paintTab(uint8_t t) {
     // needed in the strings. Empty or null lines are skipped and the remaining
     // lines are centred in the tab as a block, so a one-line name sits exactly
     // where it always did.
-    const char* labelLine1 = screenStopName[t];
-    const char* labelLine2 = screenStopNameLine2[t];
-    const char* labelLine3 = screenStopNameLine3[t];
+    const char* labelLine1 = screenStopName[slot];
+    const char* labelLine2 = screenStopNameLine2[slot];
+    const char* labelLine3 = screenStopNameLine3[slot];
 
     int lineHeight = ui.lcdGetFontHeightWithoutDecenders() + TAB_LINE_GAP;
     int lineCount = 0;
@@ -287,7 +315,7 @@ static void paintTab(uint8_t t) {
 static void retireTabBits() {
     for (uint8_t t = 0; t < numTabs; t++) {
         if (tabBitPendingClear[t]) {
-            uint16_t addr = stopSenseAddr[screenStopIndex[t]];
+            uint16_t addr = stopSenseAddr[screenStopIndex[tabSlot[t]]];
             inputBuffer[ADDR_CHAIN(addr)][ADDR_WORD(addr)] &= ~(1 << ADDR_BIT(addr));
             tabBitPendingClear[t] = false;
         }
@@ -301,7 +329,7 @@ static bool processTabTouch() {
         int x, y, w, h;
         tabRect(t, x, y, w, h);
         if (ui.checkForTouchEventInRect(TOUCH_RELEASED_EVENT, x, y, x + w, y + h)) {
-            uint16_t addr = stopSenseAddr[screenStopIndex[t]];
+            uint16_t addr = stopSenseAddr[screenStopIndex[tabSlot[t]]];
             inputBuffer[ADDR_CHAIN(addr)][ADDR_WORD(addr)] |= (1 << ADDR_BIT(addr));
             tabBitPendingClear[t] = true;
             return true;    // one tab per touch
@@ -313,7 +341,7 @@ static bool processTabTouch() {
 // Repaint any tab whose lamp (commanded) state changed.
 static void repaintChangedTabs() {
     for (uint8_t t = 0; t < numTabs; t++) {
-        uint16_t stopIdx = screenStopIndex[t];
+        uint16_t stopIdx = screenStopIndex[tabSlot[t]];
         if (stopCommandedState[stopIdx] != lastTabOn[t]) {
             paintTab(t);
         }
@@ -335,12 +363,12 @@ static void paintFlatButton(int x, int y, int w, int h, const char* label) {
 // never overwrite each other and a SET press repaints 76x32 pixels rather than
 // a whole line -- the scan loop stalls for the SPI write. Expanded layout only.
 static void paintSetIndicator() {
-    ui.lcdDrawFilledRectangle(BIG_SET_X, BIG_GEN_Y, BIG_SET_W, BIG_GEN_H, COLOR_STATUS_BG);
+    ui.lcdDrawFilledRectangle(BIG_SET_X, bigGenY, BIG_SET_W, BIG_GEN_H, COLOR_STATUS_BG);
     if (setHeld) {
         ui.lcdSetFont(Arial_24_Bold);
         ui.lcdSetFontColor(COLOR_ERROR_TEXT);     // yellow, same as the other alert text
         ui.lcdSetCursorXY(BIG_SET_X + BIG_SET_W / 2,
-                          BIG_GEN_Y + (BIG_GEN_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
+                          bigGenY + (BIG_GEN_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
         ui.lcdPrintCentered((char*)"SET");
     }
     lastPaintedSetHeld = setHeld;
@@ -349,14 +377,14 @@ static void paintSetIndicator() {
 // Draw the blind-crescendo indicator on its own line (expanded layout only --
 // the compact layout still right-justifies it into the general line).
 static void paintCrescendoLine() {
-    ui.lcdDrawFilledRectangle(0, BIG_CRESC_Y, SCREEN_W, BIG_CRESC_H, COLOR_STATUS_BG);
+    ui.lcdDrawFilledRectangle(0, bigCrescY, SCREEN_W, BIG_CRESC_H, COLOR_STATUS_BG);
     if (crescendoLevel > 0) {
         char buf[16];
         snprintf(buf, sizeof(buf), "CRESCENDO %u", crescendoLevel);
         ui.lcdSetFont(Arial_20_Bold);
         ui.lcdSetFontColor(COLOR_ERROR_TEXT);     // yellow
         ui.lcdSetCursorXY(SCREEN_W / 2,
-                          BIG_CRESC_Y + (BIG_CRESC_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
+                          bigCrescY + (BIG_CRESC_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
         ui.lcdPrintCentered(buf);
     }
     lastPaintedCrescLevel = crescendoLevel;
@@ -365,12 +393,12 @@ static void paintCrescendoLine() {
 // Draw the combination error text on its own line (expanded layout only). Blank
 // while the combination store is healthy.
 static void paintErrorLine() {
-    ui.lcdDrawFilledRectangle(0, BIG_ERR_Y, SCREEN_W, BIG_ERR_H, COLOR_STATUS_BG);
+    ui.lcdDrawFilledRectangle(0, bigErrY, SCREEN_W, bigErrH, COLOR_STATUS_BG);
     if (!combinationAvailable && combinationErrorText != NULL) {
         ui.lcdSetFont(Arial_20_Bold);
         ui.lcdSetFontColor(COLOR_ERROR_TEXT);
         ui.lcdSetCursorXY(SCREEN_W / 2,
-                          BIG_ERR_Y + (BIG_ERR_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
+                          bigErrY + (bigErrH - ui.lcdGetFontHeightWithoutDecenders()) / 2);
         ui.lcdPrintCentered((char*)combinationErrorText);
     }
     lastCombinationAvailable = combinationAvailable;
@@ -383,13 +411,13 @@ static void paintMemoryLevel() {
         // The whole line is the number, bare and centered on the full screen
         // width -- the -100/-1/+1/+100 buttons directly above it say what it is,
         // and dropping the label leaves the digits all the room on the line.
-        ui.lcdDrawFilledRectangle(0, BIG_MEM_Y, SCREEN_W, BIG_MEM_H, COLOR_STATUS_BG);
+        ui.lcdDrawFilledRectangle(0, bigMemY, SCREEN_W, BIG_MEM_H, COLOR_STATUS_BG);
         char bigBuf[16];
         snprintf(bigBuf, sizeof(bigBuf), "%u", combinationMemoryLevel);
         ui.lcdSetFont(Arial_40_Bold);
         ui.lcdSetFontColor(COLOR_STATUS_TEXT);
         ui.lcdSetCursorXY(SCREEN_W / 2,
-                          BIG_MEM_Y + (BIG_MEM_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
+                          bigMemY + (BIG_MEM_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
         ui.lcdPrintCentered(bigBuf);
         lastMemLevel = combinationMemoryLevel;
         return;
@@ -398,12 +426,16 @@ static void paintMemoryLevel() {
     // Compact layout: the bare number too, sized to the -100/-1/+1/+100 buttons
     // flanking it (MEM_BTN_H is 32). It sits in the band between the -1 and +1
     // buttons, which is 104 wide -- four digits at 32 point come to about 75.
-    ui.lcdDrawFilledRectangle(MEM_READ_X, MEM_BAND_Y, MEM_READ_W, MEM_BAND_H, COLOR_STATUS_BG);
+    // With touch off there are no buttons beside it, so it centres on the
+    // full width.
+    const int readX = TOUCH_ENABLED ? MEM_READ_X : 0;
+    const int readW = TOUCH_ENABLED ? MEM_READ_W : SCREEN_W;
+    ui.lcdDrawFilledRectangle(readX, MEM_BAND_Y, readW, MEM_BAND_H, COLOR_STATUS_BG);
     char buf[16];
     snprintf(buf, sizeof(buf), "%u", combinationMemoryLevel);
     ui.lcdSetFont(Arial_32_Bold);
     ui.lcdSetFontColor(COLOR_STATUS_TEXT);
-    ui.lcdSetCursorXY(MEM_READ_X + MEM_READ_W / 2,
+    ui.lcdSetCursorXY(readX + readW / 2,
                       MEM_BAND_Y + (MEM_BAND_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
     ui.lcdPrintCentered(buf);
     lastMemLevel = combinationMemoryLevel;
@@ -417,10 +449,10 @@ static void paintMemoryLevel() {
 // crescendo and error still share this one line as they always did.
 static void paintGeneralLine() {
     if (expandedLayout) {
-        ui.lcdDrawFilledRectangle(0, BIG_GEN_Y, BIG_SET_X, BIG_GEN_H, COLOR_STATUS_BG);
+        ui.lcdDrawFilledRectangle(0, bigGenY, BIG_SET_X, BIG_GEN_H, COLOR_STATUS_BG);
         ui.lcdSetFont(Arial_24_Bold);
         ui.lcdSetFontColor(COLOR_STATUS_TEXT);
-        ui.lcdSetCursorXY(6, BIG_GEN_Y + (BIG_GEN_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
+        ui.lcdSetCursorXY(6, bigGenY + (BIG_GEN_H - ui.lcdGetFontHeightWithoutDecenders()) / 2);
         ui.lcdPrint(lastGeneralName);
         strncpy(lastPaintedGeneral, lastGeneralName, sizeof(lastPaintedGeneral) - 1);
         lastPaintedGeneral[sizeof(lastPaintedGeneral) - 1] = '\0';
@@ -471,7 +503,10 @@ static void paintBigMemButton(int x, const char* label) {
 // Full run-screen repaint (title, config button, memory band, general, tabs).
 static void paintRunScreenFull() {
     ui.drawTitleBar(CONSOLE_NAME);   // drawTitleBar takes const char*, no cast needed
-    paintFlatButton(CFG_BTN_X, CFG_BTN_Y, CFG_BTN_W, CFG_BTN_H, "Config");
+    // Piston-driven mode has no Config button: SET + GENERAL CANCEL opens the menu.
+    if (TOUCH_ENABLED) {
+        paintFlatButton(CFG_BTN_X, CFG_BTN_Y, CFG_BTN_W, CFG_BTN_H, "Config");
+    }
 
     // Clear the ENTIRE display space (below the title bar) before painting, so
     // nothing from the previous screen survives in the gaps between the bands and
@@ -479,10 +514,12 @@ static void paintRunScreenFull() {
     ui.lcdDrawFilledRectangle(0, TITLE_H, SCREEN_W, SCREEN_H - TITLE_H, COLOR_STATUS_BG);
 
     if (expandedLayout) {
-        paintBigMemButton(BIG_M100_X, "-100");
-        paintBigMemButton(BIG_M1_X,   "-1");
-        paintBigMemButton(BIG_P1_X,   "+1");
-        paintBigMemButton(BIG_P100_X, "+100");
+        if (TOUCH_ENABLED) {
+            paintBigMemButton(BIG_M100_X, "-100");
+            paintBigMemButton(BIG_M1_X,   "-1");
+            paintBigMemButton(BIG_P1_X,   "+1");
+            paintBigMemButton(BIG_P100_X, "+100");
+        }
         paintMemoryLevel();      // big centered number, full width
         paintGeneralLine();
         paintSetIndicator();
@@ -493,10 +530,12 @@ static void paintRunScreenFull() {
     }
 
     ui.lcdDrawFilledRectangle(0, MEM_BAND_Y, SCREEN_W, MEM_BAND_H, COLOR_STATUS_BG);
-    paintFlatButton(MEM_M100_X, MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "-100");
-    paintFlatButton(MEM_M1_X,  MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "-1");
-    paintFlatButton(MEM_P1_X,  MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "+1");
-    paintFlatButton(MEM_P100_X, MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "+100");
+    if (TOUCH_ENABLED) {
+        paintFlatButton(MEM_M100_X, MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "-100");
+        paintFlatButton(MEM_M1_X,  MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "-1");
+        paintFlatButton(MEM_P1_X,  MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "+1");
+        paintFlatButton(MEM_P100_X, MEM_BTN_Y, MEM_BTN_W, MEM_BTN_H, "+100");
+    }
     paintMemoryLevel();
 
     paintGeneralLine();
@@ -600,7 +639,7 @@ static void runConfigScreen() {
         // center-anchored, so a button's top edge is centerY - height/2; anchor
         // the first center at displaySpaceTopY + margin + height/2 so it clears
         // the title bar. The count varies with compile-time features (piston
-        // assign, tuning) without overlapping.
+        // the tuning entry) without overlapping.
         const int btnH = 32;
         int   row = 0;
         auto  rowY = [&](int n) { return ui.displaySpaceTopY + 6 + btnH / 2 + n * (btnH + 6); };
@@ -613,17 +652,6 @@ static void runConfigScreen() {
                             ui.displaySpaceCenterX, rowY(row++), 260, btnH };
         ui.drawButton(crescBtn);
 
-#ifdef ORGANCORE_HAS_REMAP_STORE
-        // Same rule as the tuning entry: whether this console offers builder
-        // piston assignment is instrument config, so the row appears or doesn't
-        // and everything below it shifts up.
-        BUTTON assignBtn = { "Assign Pistons", 0, 0, 0, 0 };
-        if (PISTON_ASSIGN_ENABLED) {
-            assignBtn = BUTTON{ "Assign Pistons",
-                                ui.displaySpaceCenterX, rowY(row++), 260, btnH };
-            ui.drawButton(assignBtn);
-        }
-#endif
         // The tuning entry is instrument config, not a build option: a console
         // with no pipes simply doesn't get the row, and the entries below it
         // move up.
@@ -665,12 +693,6 @@ static void runConfigScreen() {
                 currentScreen = SCREEN_CRESCENDO;
                 return;
             }
-#ifdef ORGANCORE_HAS_REMAP_STORE
-            if (PISTON_ASSIGN_ENABLED && ui.checkForButtonClicked(assignBtn)) {
-                pistonAssignScreenRun();     // blocking; returns here on Save/Cancel
-                break;                        // redraw this menu
-            }
-#endif
             if (ORGAN_TUNING_PRESENT && ui.checkForButtonClicked(tuneBtn)) {
                 tuningScreenRun();           // blocking; returns here on Back
                 break;                       // redraw this menu
@@ -705,11 +727,9 @@ void displayForceRepaint() {
 void uiGetTouchEvents() {
     // Master touch cutoff. TOUCH_ENABLED=false makes the panel inert everywhere
     // in one place: every screen samples through this function, so returning
-    // here means no tab, button or menu ever sees a press. The display still
-    // draws and the tabs still mirror stop state -- only input is dead. Use it
-    // when a noisy or failing touch controller is injecting phantom presses;
-    // on a console whose real controls are physical stops and pistons, nothing
-    // needed is lost.
+    // here means no tab, button or menu ever sees a press. Since 1.12.0 it also
+    // switches the display to piston-driven mode (see the top of this file and
+    // PistonMenu.h), so the menu stays reachable without touch.
     if (!TOUCH_ENABLED) return;
 
     ui.getTouchEvents();
@@ -750,12 +770,36 @@ void displayInit() {
     COLOR_STATUS_TEXT  = LCD_WHITE;
     COLOR_ERROR_TEXT   = LCD_YELLOW;
 
-    numTabs = (NUM_SCREEN_STOPS < MAX_TABS) ? NUM_SCREEN_STOPS : (uint8_t)MAX_TABS;
+    // Choose the tabs. With touch on, the first MAX_TABS screen stops, as
+    // always. In piston-driven mode, skip any STOP_SCREEN stop -- it exists only
+    // as a touch target and nothing could operate it -- and keep the mirrors of
+    // real console stops, read-only.
+    numTabs = 0;
+    for (uint8_t slot = 0; slot < NUM_SCREEN_STOPS && numTabs < MAX_TABS; slot++) {
+        if (!TOUCH_ENABLED && (stopFlags[screenStopIndex[slot]] & STOP_SCREEN)) {
+            Serial.print("DBG: touch off -> screen stop tab ");
+            Serial.print(slot);
+            Serial.println(" not drawn (STOP_SCREEN, nothing could operate it)");
+            continue;
+        }
+        tabSlot[numTabs] = slot;
+        numTabs++;
+    }
 
     // No tabs to draw means the bottom of the screen is free: use the expanded
     // run-screen layout. Automatic, so a console gets it purely by having
     // NUM_SCREEN_STOPS == 0 -- no extra config value to set or forget.
     expandedLayout = (numTabs == 0);
+
+    // Piston-driven mode has no big-button row, so the expanded layout's lines
+    // move up to just below the title bar.
+    if (!TOUCH_ENABLED) {
+        bigMemY   = TITLE_H + 12;
+        bigGenY   = bigMemY + BIG_MEM_H + 2;
+        bigCrescY = bigGenY + BIG_GEN_H + 2;
+        bigErrY   = bigCrescY + BIG_CRESC_H + 2;
+        pistonMenuInit();    // looks up SET / GC / Next / Prev / Mem+ / Mem- once
+    }
 
     for (uint16_t i = 0; i < MAX_STOPS; i++) {
         lastTabOn[i] = false;
@@ -775,6 +819,16 @@ void displayInit() {
 }
 
 void displayUpdate() {
+    // Piston-driven mode: SET + GENERAL CANCEL was pressed this pass. Run the
+    // blocking menu, then repaint the run screen from scratch.
+    if (!TOUCH_ENABLED && displayMenuRequested) {
+        displayMenuRequested = false;
+        currentScreen = SCREEN_CONFIG;
+        pistonMenuRun();
+        currentScreen = SCREEN_OPERATIONAL;
+        runScreenNeedsFullPaint = true;
+    }
+
     if (currentScreen == SCREEN_CRESCENDO) {
         crescendoUpdate();
         return;
@@ -833,6 +887,9 @@ void displayUpdate() {
 }
 
 void displayProcessTouch() {
+    // Piston-driven mode: nothing on the screen can be touched.
+    if (!TOUCH_ENABLED) return;
+
     if (currentScreen == SCREEN_CRESCENDO) {
         crescendoHandleTouch();
         return;

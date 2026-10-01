@@ -18,7 +18,7 @@ extern const uint8_t  NUM_PISTONS;
 extern const uint16_t NUM_REMAPS;   // widened from uint8_t: MAX_REMAPS is now 256
 extern const uint8_t  NUM_SEQUENCER_PISTONS;
 extern const uint8_t  NUM_GENERALS;
-extern const uint8_t  NUM_DIVISIONS;  // divisions this console has (<= REMAP_DIVISIONS); bounds the piston-assign divisional walk. Frozen order: 0 Pedal,1 Great,2 Swell,3 Choir,4 Solo,...
+extern const uint8_t  NUM_DIVISIONS;  // divisions this console has
 extern const uint8_t  NUM_DISPLAY_LINES;
 
 // ---- Timing (per-instrument; used as runtime delays) ----
@@ -67,19 +67,13 @@ extern const uint8_t  VIRTUAL_CHAIN_MAX_NOTE;
 
 // ---- Combination action ----
 // Where the console's files live: the SD card (false) or the Teensy 4.1
-// on-board QSPI flash via LittleFS (true). This covers ALL of them -- COMB.DAT,
-// CRESC.DAT and REMAP.DAT -- so a flash console keeps its crescendo and its
-// builder piston assignment (they used to be stranded on the card). Layouts are
+// on-board QSPI flash via LittleFS (true). This covers ALL of them -- the
+// combination and crescendo files -- so a flash console keeps its crescendo
+// (it used to be stranded on the card). Layouts are
 // byte-for-byte identical on both media; only the medium changes. Both are
 // always compiled and the choice is made at mount (see OrganStorage).
 extern const bool     COMBINATION_USE_SPIFLASH;
 
-// Does this console offer field builder piston assignment -- the "Assign
-// Pistons" config screen and the REMAP.DAT store that overrides the const
-// remapFrom[]/remapTo[]? False on a console whose input map is fully defined in
-// config data, which is the usual case: no menu entry, no REMAP.DAT loaded, and
-// applyRemaps() uses only the const arrays.
-extern const bool     PISTON_ASSIGN_ENABLED;
 
 // ---- Stops ----
 extern const uint16_t stopSenseAddr[];

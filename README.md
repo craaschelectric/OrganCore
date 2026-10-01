@@ -47,59 +47,35 @@ Selected at compile time by `ORGAN_COMBINATION_MODE` in `CombinationConfig.h`:
 matches the piston's division. `stopDivision` (control scope) and the capture flags (mask
 membership) are independent — a stop can be in a division yet excluded from its divisional.
 
-## Builder piston assignment
+## Display: touch or pistons
 
-A touchscreen flow (`Config → Assign Pistons`) that lets a builder assign the console's
-pistons and control buttons **in the field, without recompiling**, by parking on a logical
-function and pressing the physical button(s) that should trigger it. Compiled only for
-local-capture mode (`ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD`, which defines the guard
-`ORGANCORE_HAS_REMAP_STORE`); whether a given console *offers* it is the runtime config value
-`PISTON_ASSIGN_ENABLED`. `REMAP.DAT` lives on whichever medium `COMBINATION_USE_SPIFLASH`
-selects, the same one `COMB.DAT` uses. Setting `ORGAN_ENABLE_PISTON_ASSIGN 0` in `CombinationConfig.h`
-(or `-D` on the build) compiles out the whole feature — store, screen, menu entry, and
-REMAP.DAT loading — and `applyRemaps()` uses only the const `remapFrom[]`/`remapTo[]` from
-`OrganConfig.h`. Choose that on consoles whose input map is fully defined in config data
-(e.g. Opus 62), where field reassignment is neither needed nor wanted. `ORGANCORE_HAS_REMAP_STORE` is computed in `CombinationConfig.h` and every
-file that uses the feature guards its `#include`s on it, so a disabled build
-does not need the feature's source files (`RemapStore.*`, `PistonAssignScreen.*`,
-`PistonAssignSlots.h`) present at all. In HW mode or on
-SPI-flash media the feature also compiles out and `applyRemaps()` reads the const arrays
-exactly as before.
+`TOUCH_ENABLED` in the instrument config chooses how the 3.2" display is driven.
 
-**Canonical virtual slots.** Every assignable function has one canonical address on a reserved
-virtual chain (`REMAP_SLOT_CHAIN`, index 11 — the top of the widened `MAX_CHAINS = 12` space,
-so real chains growing upward from 0 never collide). Calibration never rewrites the piston list;
-it only appends remap entries `{pressed physical addr → slot addr}`. `applyRemaps()` then funnels
-each press onto its slot before any handler runs, so the runtime piston/handler code is
-unchanged and simply reads the canonical slots it always read. Multiple physical buttons can
-funnel onto one slot (a General Cancel on both the rail and a toe stud). Captures come from
-**all input chains including virtual ones** (a MIDI pedalboard's embedded pistons report through
-a virtual chain and must be assignable); only the slot chain is excluded, being a destination.
+- **true** — the touchscreen interface: run screen with memory buttons and a Config button,
+  screen-stop tabs, and the touch config menu.
+- **false** (piston-driven, 1.12.0) — the touch layer is off and the console's pistons drive
+  the display (`PistonMenu.*`, grown out of the Opus 57 `DisplayLocal` module). The run screen
+  shows the memory level, last general, SET, crescendo level and storage errors, with no buttons.
+  There are **no on-screen stops**: a tab whose stop is `STOP_SCREEN` is not drawn. Tabs that
+  **mirror** a real console stop (as on Opus 62) are still drawn, read-only. **Hold SET and press
+  GENERAL CANCEL** to open the menu (that press does not cancel). In the menu and its screens,
+  SET acts, GENERAL CANCEL goes back, MEM+/MEM− move in a list (falling back to NEXT/PREV), and
+  NEXT/PREV step a value (falling back to MEM+/MEM−). Items: *Calibrate Shoes* (every analog shoe,
+  crescendo shoe included), *Crescendo* (when present), *Tuning* (when `ORGAN_TUNING_PRESENT`).
+  The sketch's `loop()` needs nothing new: the combination back-end flags the chord and
+  `displayUpdate()` runs the menu.
 
-**The slot layout is frozen**, exactly like the combination file's record layout: stored `to`
-addresses are computed from it, so changing a cap or stride renumbers slots and silently
-corrupts stored assignments. Layout on the slot chain (211 of 256 bits used), walked in order:
-7 known controls (Set, General Cancel, Next, Previous, Mem+, Mem−, Shift), 64 generals, 128
-divisionals (8 divisions × 16, division-major, stride 16, frozen order **0 Pedal, 1 Great,
-2 Swell, 3 Choir, 4 Solo**, then further divisions), 12 spare controls (reserved, renameable,
-walked last). To grow later: append a **new** block at a fresh range, never widen one in place,
-and bump `REMAP_FORMAT_VERSION`.
+## Combination storage on QSPI flash
 
-**Screen controls.** *Next* advances one function; *Next Block* jumps to the next division (or
-region) and is always available with no validation, so a builder who wants, say, the pedal
-divisional positions as extra generals leaves the Pedal block empty, advances to the Generals
-block, and assigns those physical pedal buttons there. *Clear* drops the current function's
-assignments; *Start Over* empties the table; *Save* writes `REMAP.DAT`; *Cancel* discards.
-Presses capture on the rising edge, one per press (per-address release-debounce). Each capture
-prints a serial line naming the function and the captured CWB address; the builder sees only the
-function name and a live count of buttons assigned to it.
+With `COMBINATION_USE_SPIFLASH` true, the files live on the Teensy 4.1's QSPI NOR flash through
+`OrganQSPIFlash` (1.12.0), OrganCore's own copy of LittleFS's QSPI back-end. Its chip table is the
+full stock LittleFS table plus the Boya BY25Q128ES (JEDEC `68 40 18`), so no patched LittleFS is
+needed; delete any patched copy from your sketchbook's `libraries/LittleFS`. NOR only. A chip
+that is absent or unknown prints its JEDEC ID on the serial line at mount; to support a new part,
+add a row to the table in `OrganQSPIFlash.cpp`.
 
-**Storage.** `REMAP.DAT` on the same medium as `COMB.DAT` (magic `OCRM`, versioned, with the slot
-chain and `MAX_REMAPS` cap validated). Loaded by `remapStoreInit()`, called at the end of
-`combinationInit()` once the card is mounted — no new sketch ordering. **A missing file means
-never-calibrated** → the const remap defaults stay in effect; **a valid zero-count file means
-deliberately-cleared** (Start Over) → the live empty table wins; a foreign/old/truncated file is
-blanked to zero-count.
+Builder piston assignment (the *Assign Pistons* screen and `REMAP.DAT`) was **removed in 1.12.0**.
+Duplicate buttons are still merged by the const `remapFrom[]`/`remapTo[]` tables.
 
 ## Stop truth
 

@@ -31,9 +31,12 @@
 
 void expressionCalScreenRun() {
     // Work on a copy so Cancel discards changes.
+    // expressionCalibrationSave() writes all MAX_EXPRESSIONS entries, so seed
+    // them all -- seeding only NUM_EXPRESSIONS left the rest uninitialised and
+    // wrote stack garbage into EEPROM for the unused slots.
     uint16_t wMin[MAX_EXPRESSIONS];
     uint16_t wMax[MAX_EXPRESSIONS];
-    for (uint8_t i = 0; i < NUM_EXPRESSIONS; i++) {
+    for (uint8_t i = 0; i < MAX_EXPRESSIONS; i++) {
         wMin[i] = calibratedExprMin[i];
         wMax[i] = calibratedExprMax[i];
     }
@@ -51,11 +54,14 @@ void expressionCalScreenRun() {
     const int capMinX = 205;      // button centers, to the RIGHT of the readout field
     const int capMaxX = 268;
 
-    // One row of Min/Max per analog input; discrete shoes have nothing to calibrate.
+    // One row of Min/Max per analog shoe -- swell (EXPR_ANALOG) and crescendo
+    // (EXPR_CRESCENDO) alike, since the crescendo scales its level from the same
+    // calibration. Discrete shoes have nothing to calibrate. (Before 1.12.0 the
+    // crescendo shoe was skipped here and could not be calibrated by touch.)
     BUTTON minBtn[MAX_EXPRESSIONS];
     BUTTON maxBtn[MAX_EXPRESSIONS];
     for (uint8_t i = 0; i < NUM_EXPRESSIONS; i++) {
-        if (exprType[i] != EXPR_ANALOG) continue;
+        if (exprType[i] != EXPR_ANALOG && exprType[i] != EXPR_CRESCENDO) continue;
         int y = rowY0 + i * rowH;
         minBtn[i] = (BUTTON){ "Min", capMinX, y + 4, 54, 30 };
         maxBtn[i] = (BUTTON){ "Max", capMaxX, y + 4, 54, 30 };
@@ -93,7 +99,7 @@ void expressionCalScreenRun() {
 
         // Capture buttons: checked every loop (a tap must never be missed).
         for (uint8_t i = 0; i < NUM_EXPRESSIONS; i++) {
-            if (exprType[i] != EXPR_ANALOG) continue;
+            if (exprType[i] != EXPR_ANALOG && exprType[i] != EXPR_CRESCENDO) continue;
             if (ui.checkForButtonClicked(minBtn[i])) wMin[i] = (uint16_t)analogRead(exprAnalogPin[i]);
             if (ui.checkForButtonClicked(maxBtn[i])) wMax[i] = (uint16_t)analogRead(exprAnalogPin[i]);
         }
@@ -103,10 +109,12 @@ void expressionCalScreenRun() {
         if (now - lastReadout >= READOUT_MS) {
             lastReadout = now;
             for (uint8_t i = 0; i < NUM_EXPRESSIONS; i++) {
-                if (exprType[i] != EXPR_ANALOG) continue;
+                if (exprType[i] != EXPR_ANALOG && exprType[i] != EXPR_CRESCENDO) continue;
                 int raw = analogRead(exprAnalogPin[i]);
                 char buf[40];
-                snprintf(buf, sizeof(buf), "P%u %4d [%u-%u]", i, raw, wMin[i], wMax[i]);
+                // P = swell shoe, C = crescendo shoe.
+                snprintf(buf, sizeof(buf), "%c%u %4d [%u-%u]",
+                         exprType[i] == EXPR_CRESCENDO ? 'C' : 'P', i, raw, wMin[i], wMax[i]);
                 if (strcmp(buf, shown[i]) == 0) continue;
                 int y = rowY0 + i * rowH;
                 ui.lcdDrawFilledRectangle(readX, y, readW, rowH - 8, LCD_BLACK);
