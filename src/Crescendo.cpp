@@ -44,6 +44,15 @@ static uint16_t setPistonAddr = ADDR_DISABLED;  // console SET piston (for progr
 
 static uint8_t  crescRecord[COMBO_RECORD_SIZE]; // cached record for the live operational level
 static bool     lastSentEffective[MAX_STOPS];   // what the engine was last told (while engaged)
+
+// Tutti (1.13.0): a second blind overlay sharing this engine. A press toggles it;
+// while engaged, its stored registration is OR'd onto the base exactly like a
+// crescendo level. Both overlays feed ONE effective-state computation below, so
+// they compose (both can be engaged) and never fight over stopEngineSuppressed or
+// lastSentEffective.
+bool            tuttiEngaged = false;
+static uint8_t  tuttiRecord[COMBO_RECORD_SIZE];
+static bool     overlayActive = false;          // crescendo and/or tutti engaged last loop
 static uint16_t rawAtLastLevelChange = 0;       // hysteresis anchor
 
 // ============================================================
@@ -158,30 +167,37 @@ static uint8_t crescLevelFromShoe() {
 
 void crescendoPoll() {
     if (currentScreen != SCREEN_OPERATIONAL) return;   // no overlay while programming/config
-    if (crescSlot == 0xFF || !crescendoAvailable) return;
 
-    uint8_t newLevel = crescLevelFromShoe();
-
-    bool wasEngaged = (crescendoLevel > 0);
-    bool nowEngaged = (newLevel > 0);
-
-    if (newLevel != crescendoLevel && nowEngaged) {
-        crescLoadRecord(newLevel, crescRecord);        // cache the new level's stops
+    // Crescendo term: only when a shoe is configured and the store is usable. A
+    // console with no shoe (Opus 62) still runs the rest of this function, because
+    // the tutti overlay lives here too.
+    uint8_t newLevel = 0;
+    if (crescSlot != 0xFF && crescendoAvailable) {
+        newLevel = crescLevelFromShoe();
+        if (newLevel != crescendoLevel && newLevel > 0) {
+            crescLoadRecord(newLevel, crescRecord);    // cache the new level's stops
+        }
     }
 
-    if (!wasEngaged && nowEngaged) {
+    bool wasActive = overlayActive;
+    bool nowActive = (newLevel > 0) || tuttiEngaged;
+
+    if (!wasActive && nowActive) {
         // Engage: the engine currently holds exactly the base (commanded), so
         // seed from it and take over sending.
         for (uint16_t s = 0; s < NUM_STOPS; s++) lastSentEffective[s] = stopCommandedState[s];
         stopEngineSuppressed = true;
     }
 
-    if (wasEngaged || nowEngaged) {
-        // Recompute effective = base OR level, send only what changed. Runs every
-        // loop while engaged (catches manual base changes) and once on release
-        // (nowEngaged false -> effective collapses to the base).
+    if (wasActive || nowActive) {
+        // effective = base OR crescendo level OR tutti. Send only what changed.
+        // Runs every loop while either overlay is engaged (catches manual base
+        // changes, recalls and GC), and once more on release, when effective
+        // collapses back to the base.
         for (uint16_t s = 0; s < NUM_STOPS; s++) {
-            bool eff = stopCommandedState[s] || (nowEngaged && recordGetBit(crescRecord, s));
+            bool eff = stopCommandedState[s]
+                    || (newLevel > 0 && recordGetBit(crescRecord, s))
+                    || (tuttiEngaged && recordGetBit(tuttiRecord, s));
             if (eff != lastSentEffective[s]) {
                 stopSendToEngine(s, eff);
                 lastSentEffective[s] = eff;
@@ -189,11 +205,32 @@ void crescendoPoll() {
         }
     }
 
-    if (wasEngaged && !nowEngaged) {
+    if (wasActive && !nowActive) {
         stopEngineSuppressed = false;   // base is authoritative again
     }
 
+    overlayActive  = nowActive;
     crescendoLevel = newLevel;
+}
+
+// ============================================================
+// Tutti (blind toggle overlay)
+// ============================================================
+
+void tuttiEngage(const uint8_t* record) {
+    memcpy(tuttiRecord, record, COMBO_RECORD_SIZE);
+    tuttiEngaged = true;
+    if (ADDR_VALID(TUTTI_INDICATOR_ADDR)) setOutput(TUTTI_INDICATOR_ADDR, true);
+    Serial.println("DBG: Tutti engaged");
+}
+
+// Drop the tutti. The next crescendoPoll() sees the overlay go inactive and
+// collapses the engine back to the base.
+void tuttiRelease() {
+    if (!tuttiEngaged) return;
+    tuttiEngaged = false;
+    if (ADDR_VALID(TUTTI_INDICATOR_ADDR)) setOutput(TUTTI_INDICATOR_ADDR, false);
+    Serial.println("DBG: Tutti released");
 }
 
 // ============================================================
@@ -215,6 +252,7 @@ static void crescRecallProgLevel() {
 // the blocking config menu), collapse the engine back to the base and drop
 // suppression so programming starts from a clean, visible state.
 static void crescReleaseOverlay() {
+    tuttiRelease();
     if (crescendoLevel > 0 || stopEngineSuppressed) {
         for (uint16_t s = 0; s < NUM_STOPS; s++) {
             if (lastSentEffective[s] != stopCommandedState[s]) {
@@ -225,6 +263,7 @@ static void crescReleaseOverlay() {
     }
     stopEngineSuppressed = false;
     crescendoLevel = 0;
+    overlayActive = false;
 }
 
 void crescendoProgEnter() {

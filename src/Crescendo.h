@@ -43,11 +43,22 @@ extern uint8_t crescendoProgLevel;    // level currently shown on the programmin
 // if absent). Call after combinationInit() (SD is mounted there).
 void crescendoInit();
 
-// ---- Operation (blind overlay) ----
-// Read the shoe, track engage/level changes, and emit the OR'd effective state.
-// No-op unless currentScreen == SCREEN_OPERATIONAL. Gate the call site by
-// EXPR_ENABLED (the shoe must be wired/terminated). Call every loop.
+// ---- Operation (blind overlays: crescendo + tutti) ----
+// Emit the effective state  base OR crescendo level OR tutti  to the engine,
+// sending only changes, while either overlay is engaged. The shoe is read only
+// when an EXPR_CRESCENDO slot exists, so this must be called every loop even on a
+// console with no crescendo shoe -- the tutti overlay runs here as well.
+// No-op unless currentScreen == SCREEN_OPERATIONAL.
 void crescendoPoll();
+
+// ---- Tutti (1.13.0) ----
+// A PISTON_TYPE_TUTTI press toggles a blind overlay: engage ORs the stored tutti
+// registration onto the base (drawknob lamps do not move), release removes it and
+// the base registration returns. General Cancel releases it. Driven by
+// CombinationSD; TUTTI_INDICATOR_ADDR (if valid) follows tuttiEngaged.
+extern bool tuttiEngaged;
+void tuttiEngage(const uint8_t* record);   // copy record, engage, light indicator
+void tuttiRelease();                       // disengage, darken indicator
 
 // ---- Programming screen support ----
 void crescendoProgEnter();            // enter programming: reset to level 1, recall if set

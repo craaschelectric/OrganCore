@@ -9,4 +9,5 @@
 #include "OrganConfig.h"
 #include "TuningConfig.h"
 #include "OrganPower.h"
+#include "OrganDiag.h"
 #endif

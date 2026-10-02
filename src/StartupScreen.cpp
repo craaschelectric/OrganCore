@@ -9,6 +9,7 @@
 #include "ScanChain.h"        // scanAllChains() - clear the lamps on entry
 #include "StopHandler.h"      // buildStopOutputs()
 #include "OrganPower.h"       // powerPoll() - the power switch works on every screen
+#include "OrganDiag.h"        // diagPoll(), diagLog()
 
 #include <stdio.h>
 
@@ -50,6 +51,16 @@ void startupWaitScreenRun() {
         scanAllChains();  // refresh inputs so powerPoll() sees the power switch
         powerPoll();      // the organist can switch off while waiting for the engine
         usbMIDI.read();   // dispatch to the sketch handlers; the handshake note sets startupNoteSeen
+        diagPoll(false);  // serial dump works here too
+
+        // Give up after STARTUP_WAIT_TIMEOUT_MS (0 = never). After a reset in the
+        // middle of a service the engine is already running and will not send its
+        // startup handshake again; without this the console would sit here until
+        // everything is power-cycled.
+        if (STARTUP_WAIT_TIMEOUT_MS > 0 && millis() - startMs >= STARTUP_WAIT_TIMEOUT_MS) {
+            diagLog("startup wait timed out (no handshake) - continuing");
+            break;
+        }
 
         int32_t secs = (int32_t)((millis() - startMs) / 1000);
         if (secs != lastShownSecs) {

@@ -46,5 +46,6 @@ extern bool displayMenuRequested;
 // Force a full run-screen repaint on the next displayUpdate(). Used after a
 // blocking screen (e.g. the startup wait) has overpainted the run screen.
 void displayForceRepaint();
+void displayReinit();          // re-initialize the panel and repaint (1.13.0, OrganDiag)
 
 #endif // DISPLAY_MANAGER_H

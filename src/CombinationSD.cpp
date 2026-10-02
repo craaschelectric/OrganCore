@@ -32,6 +32,7 @@
 #include "Display.h"          // shared 'ui' for the format progress screen
 #include "DisplayManager.h"   // displayReady, displayForceRepaint
 #include "OrganStorage.h"     // organFS / organStorageMount() — the shared mount
+#include "Crescendo.h"        // tuttiEngage / tuttiRelease -- the tutti is a blind overlay (1.13.0)
 #include <stdio.h>
 
 // Per-combination files. Each memory level / piston pair is its own tiny 64-byte
@@ -338,15 +339,33 @@ void processPistons() {
                 break;
 
             case PISTON_TYPE_TUTTI:
-                // Like a general, but outside the sequence (sequencerPosition is
-                // left alone, so NEXT continues from the last general) and at a
-                // fixed level (see comboFileName).
+                // 1.13.0: a blind TOGGLE overlay, like the crescendo. SET+TUTTI
+                // stores the visible registration (fixed level, see
+                // comboFileName). A plain press toggles: engage ORs the stored
+                // tutti onto the base without moving a single drawknob lamp;
+                // the next press releases it and the base registration sounds
+                // again. The sequence, the memory level and the general line
+                // are untouched -- the screen's own TUTTI indicator shows it.
                 if (setHeld) {
                     combinationCapture(i);
+                    if (tuttiEngaged) tuttiEngage(recordBuf);   // keep a live tutti current
+                } else if (tuttiEngaged) {
+                    tuttiRelease();
                 } else {
-                    combinationRecall(i);
-                    strcpy(lastGeneralName, "TUTTI");
-                    generalDisplayDirty = true;
+                    // Load the stored tutti. Never set = no file = all-zero record,
+                    // so engaging an unset tutti adds nothing rather than cancelling.
+                    char name[20];
+                    comboFileName(name, combinationMemoryLevel, i);
+                    uint8_t tuttiBuf[COMBO_RECORD_SIZE];
+                    memset(tuttiBuf, 0, COMBO_RECORD_SIZE);
+                    if (organFS->exists(name)) {
+                        File f = organFS->open(name, FILE_READ);
+                        if (f) {
+                            f.read(tuttiBuf, COMBO_RECORD_SIZE);
+                            f.close();
+                        }
+                    }
+                    tuttiEngage(tuttiBuf);
                 }
                 break;
 
@@ -372,6 +391,7 @@ void processPistons() {
                     displayMenuRequested = true;
                     break;
                 }
+                tuttiRelease();          // GC drops an engaged tutti as well as the base
                 combinationCancel();
                 lastGeneralName[0] = '\0';
                 sequencerPosition = -1;

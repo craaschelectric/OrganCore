@@ -73,6 +73,7 @@
 #include "PistonHandler.h"     // lastGeneralName, generalDisplayDirty
 #include "Combination.h"       // combinationAvailable/MemoryLevel/ErrorText, combinationMemStep
 #include "Crescendo.h"         // crescendo overlay level + programming screen API
+#include "OrganDiag.h"         // diagLinkLostNotice for the title bar, diagPoll in the menu pump
 #include "ExpressionCalScreen.h"
 #include "PistonMenu.h"         // the TOUCH_ENABLED=false (piston-driven) menu and screens
 #include "TuningConfig.h"
@@ -218,6 +219,7 @@ static char    lastPaintedGeneral[8];      // last painted general name
 static bool    runScreenNeedsFullPaint;    // force a full repaint (e.g. on entry)
 static bool    lastPaintedSetHeld;         // last painted SET badge state (expanded layout only)
 static uint8_t lastPaintedCrescLevel;      // last painted operational crescendo level (0 = none)
+static bool    lastPaintedTutti;           // last painted tutti-engaged state (1.13.0)
 
 // Crescendo programming screen (SCREEN_CRESCENDO): a control band above the same
 // 8-tab grid the run screen uses (tab coords are identical), plus a Done button
@@ -378,9 +380,12 @@ static void paintSetIndicator() {
 // the compact layout still right-justifies it into the general line).
 static void paintCrescendoLine() {
     ui.lcdDrawFilledRectangle(0, bigCrescY, SCREEN_W, BIG_CRESC_H, COLOR_STATUS_BG);
-    if (crescendoLevel > 0) {
-        char buf[16];
-        snprintf(buf, sizeof(buf), "CRESCENDO %u", crescendoLevel);
+    if (crescendoLevel > 0 || tuttiEngaged) {
+        // Both blind overlays share this line (1.13.0).
+        char buf[24];
+        if (tuttiEngaged && crescendoLevel > 0) snprintf(buf, sizeof(buf), "TUTTI + CRESC %u", crescendoLevel);
+        else if (tuttiEngaged)                  snprintf(buf, sizeof(buf), "TUTTI");
+        else                                    snprintf(buf, sizeof(buf), "CRESCENDO %u", crescendoLevel);
         ui.lcdSetFont(Arial_20_Bold);
         ui.lcdSetFontColor(COLOR_ERROR_TEXT);     // yellow
         ui.lcdSetCursorXY(SCREEN_W / 2,
@@ -388,6 +393,7 @@ static void paintCrescendoLine() {
         ui.lcdPrintCentered(buf);
     }
     lastPaintedCrescLevel = crescendoLevel;
+    lastPaintedTutti      = tuttiEngaged;
 }
 
 // Draw the combination error text on its own line (expanded layout only). Blank
@@ -473,15 +479,19 @@ static void paintGeneralLine() {
 
     // Blind-crescendo indicator: "CRESCENDO nn" in yellow, right-justified on
     // this same line, whenever the crescendo is engaged (level > 0).
-    if (crescendoLevel > 0) {
-        char cbuf[16];
-        snprintf(cbuf, sizeof(cbuf), "CRESCENDO %u", crescendoLevel);
+    if (crescendoLevel > 0 || tuttiEngaged) {
+        // Both blind overlays share this right-side field (1.13.0).
+        char cbuf[24];
+        if (tuttiEngaged && crescendoLevel > 0) snprintf(cbuf, sizeof(cbuf), "TUTTI + CRESC %u", crescendoLevel);
+        else if (tuttiEngaged)                  snprintf(cbuf, sizeof(cbuf), "TUTTI");
+        else                                    snprintf(cbuf, sizeof(cbuf), "CRESCENDO %u", crescendoLevel);
         ui.lcdSetFont(Arial_10_Bold);
         ui.lcdSetFontColor(COLOR_ERROR_TEXT);           // yellow
         ui.lcdSetCursorXY(SCREEN_W - 116, GEN_Y + 3);   // fixed right-side field
         ui.lcdPrint(cbuf);
     }
     lastPaintedCrescLevel = crescendoLevel;
+    lastPaintedTutti      = tuttiEngaged;
 
     lastCombinationAvailable = combinationAvailable;
     strncpy(lastPaintedGeneral, lastGeneralName, sizeof(lastPaintedGeneral) - 1);
@@ -502,7 +512,9 @@ static void paintBigMemButton(int x, const char* label) {
 
 // Full run-screen repaint (title, config button, memory band, general, tabs).
 static void paintRunScreenFull() {
-    ui.drawTitleBar(CONSOLE_NAME);   // drawTitleBar takes const char*, no cast needed
+    // After a USB link drop the engine is no longer listening to this console;
+    // say so in place of the console name until the next power-up (OrganDiag).
+    ui.drawTitleBar(diagLinkLostNotice ? "MIDI LINK LOST - RESTART ORGAN" : CONSOLE_NAME);
     // Piston-driven mode has no Config button: SET + GENERAL CANCEL opens the menu.
     if (TOUCH_ENABLED) {
         paintFlatButton(CFG_BTN_X, CFG_BTN_Y, CFG_BTN_W, CFG_BTN_H, "Config");
@@ -678,6 +690,7 @@ static void runConfigScreen() {
             // startPulseSequence() on !pulseActive.
             scanAllChains();            // refresh inputs so powerPoll() sees the switch
             powerPoll();                // the power switch works on every screen
+            diagPoll(false);            // USB link monitor + serial dump (no re-init in a menu)
             uiGetTouchEvents();
             usbMIDI.read();             // GrandOrgue's pitch reports arrive here
             tempSensorPoll();           // keep the temperature reading live
@@ -818,6 +831,16 @@ void displayInit() {
     displayReady = true;
 }
 
+// Re-run the panel half of displayInit() -- the ILI9341 init sequence, rotation
+// and palette -- and repaint the current screen. For a panel that has lost its
+// configuration (brownout) while the Teensy kept running. Touch and tab
+// selection are untouched. Called by OrganDiag (1.13.0).
+void displayReinit() {
+    ui.lcdInitialize((int)TFT_ORIENTATION, Arial_9_Bold);
+    ui.setColorPaletteGray();
+    displayForceRepaint();
+}
+
 void displayUpdate() {
     // Piston-driven mode: SET + GENERAL CANCEL was pressed this pass. Run the
     // blocking menu, then repaint the run screen from scratch.
@@ -861,7 +884,7 @@ void displayUpdate() {
             paintGeneralLine();
             generalDisplayDirty = false;
         }
-        if (crescendoLevel != lastPaintedCrescLevel) {
+        if (crescendoLevel != lastPaintedCrescLevel || tuttiEngaged != lastPaintedTutti) {
             paintCrescendoLine();
         }
         if (combinationAvailable != lastCombinationAvailable) {
@@ -875,6 +898,7 @@ void displayUpdate() {
     if (combinationAvailable != lastCombinationAvailable ||
         generalDisplayDirty ||
         crescendoLevel != lastPaintedCrescLevel ||
+        tuttiEngaged != lastPaintedTutti ||
         strncmp(lastGeneralName, lastPaintedGeneral, sizeof(lastPaintedGeneral)) != 0) {
         paintGeneralLine();
         generalDisplayDirty = false;

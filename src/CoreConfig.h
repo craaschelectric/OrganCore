@@ -46,12 +46,17 @@ constexpr uint8_t PISTON_TYPE_SHIFT      = 6;
 constexpr uint8_t PISTON_TYPE_MEM_UP     = 7;  // local-SD combination
 constexpr uint8_t PISTON_TYPE_MEM_DOWN   = 8;
 constexpr uint8_t PISTON_TYPE_MEM_ZERO   = 9;
-// TUTTI (1.11.0): a general-scope piston that is NOT part of the NEXT/PREV
-// sequence and holds ONE registration shared by every memory level. With local
-// combination memory (COMBINATION_MODE_SD) it captures with SET and recalls
-// locally, always stored at level 0 (CB_0000_<addr>.DAT) whatever level is
-// showing. Without local memory (COMBINATION_MODE_HW) it is sent to the host
-// exactly like a general. Never list a TUTTI in sequencerPistonList.
+// TUTTI: a general-scope piston outside the NEXT/PREV sequence that holds ONE
+// registration shared by every memory level, stored at level 0
+// (CB_0000_<addr>.DAT) whatever level is showing. SET+TUTTI stores it.
+// 1.13.0: with local combination memory (COMBINATION_MODE_SD) a plain press is a
+// blind TOGGLE OVERLAY, exactly like the crescendo -- the stored tutti is OR'd
+// onto the base registration without moving any drawknob lamp, and the next
+// press (or General Cancel) removes it so the base sounds again. It no longer
+// recalls (1.11.0-1.12.0 replaced the base, which was wrong for a tutti).
+// TUTTI_INDICATOR_ADDR lights while engaged. Without local memory
+// (COMBINATION_MODE_HW) it is sent to the host like a general. Never list a TUTTI
+// in sequencerPistonList.
 constexpr uint8_t PISTON_TYPE_TUTTI      = 10;
 
 // ---- Combination back-end mode (compile-time selection) ----

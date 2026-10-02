@@ -116,6 +116,12 @@ extern const uint8_t  pistonType[];
 extern const uint16_t pistonAddr[];
 extern const uint8_t  pistonMidiNote[];
 extern const uint8_t  pistonDivision[];   // for local-SD divisional recall
+
+// Lamp that lights while a PISTON_TYPE_TUTTI overlay is engaged (1.13.0), as an
+// output-chain bit address. ADDR_DISABLED = no indicator lamp (the screen still
+// shows TUTTI). Must not be any stop's stopLightAddr, or buildStopOutputs()
+// would overwrite it.
+extern const uint16_t TUTTI_INDICATOR_ADDR;
 extern const uint8_t  sequencerPistonList[];
 extern const char     generalName[][7];
 extern const uint32_t SEQUENCER_WRAP_DELAY_MS;
@@ -156,6 +162,12 @@ extern const uint8_t  SHIFT_NOTE_OFFSET;
 extern const bool     STARTUP_WAIT_ENABLED;
 extern const uint8_t  STARTUP_WAIT_MIDI_CHANNEL;   // 0-based, like the other MIDI_CH_* symbols
 extern const uint8_t  STARTUP_WAIT_MIDI_NOTE;
+// How long the startup wait holds out for the handshake before giving up and
+// starting anyway, in ms (1.13.0). 0 = wait forever (the pre-1.13 behavior). A
+// non-zero value matters after a reset mid-service: the engine is already
+// running and will never send its startup handshake again, so without a timeout
+// the console sits on "Starting Up" until someone power-cycles everything.
+extern const uint32_t STARTUP_WAIT_TIMEOUT_MS;
 
 // ---- Touch buttons (Mem/Save) ----
 extern const uint8_t  MEM_UP_MIDI_CHANNEL;
@@ -208,6 +220,13 @@ extern const bool     TOUCH_INVERT_Y;
 // touch controller. Gate is in uiGetTouchEvents(), the one point every screen
 // samples through.
 extern const bool     TOUCH_ENABLED;
+
+// Panel health readback (1.13.0, OrganDiag). true = every 2 s ask the ILI9341 for
+// its power-mode register and re-initialize the panel if it has lost its setup
+// (a browned-out panel stays lit but goes grey). Needs the panel's MISO line
+// connected; if the readback proves unusable the check switches itself off for
+// that boot and logs it. false = no readback.
+extern const bool     DISPLAY_READBACK_ENABLED;
 extern const char* const displayLineLabel[];
 extern const uint8_t  SYSEX_SAVE_LINE_INDEX;
 extern const char     SYSEX_SAVE_TRIGGER[];

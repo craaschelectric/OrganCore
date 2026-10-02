@@ -17,6 +17,7 @@
 #include "PitchManager.h"          // pitchManagerPoll, manual trim, readouts
 #include "TempSensor.h"            // tempSensorPoll, getTempDegC
 #include "OrganPower.h"            // powerPoll
+#include "OrganDiag.h"             // diagPoll, diagReadLog, diagBootNumber
 #include "CombinationConfig.h"     // ORGAN_COMBINATION_MODE
 #include "MidiOut.h"               // midiSendNoteOff (HW mode SET release)
 
@@ -60,6 +61,7 @@ static void beginPass() {
     usbMIDI.read();
     tempSensorPoll();
     pitchManagerPoll();
+    diagPoll(false);   // USB link monitor + serial dump; display re-init waits for the run screen
 }
 
 // ============================================================
@@ -338,6 +340,81 @@ static void runTuning() {
 }
 
 // ============================================================
+// Diagnostics (1.13.0)
+// ============================================================
+// The tail of DIAG.LOG, newest at the bottom, a page at a time. The list pistons
+// page back (older) and forward (newer); GENERAL CANCEL leaves. Read-only: the
+// log is never cleared from here, so an organist cannot lose the evidence.
+static void runDiagnostics() {
+    static char logText[4096];
+    char*    lines[160];
+    uint16_t lineCount = diagReadLog(logText, sizeof logText, lines, 160);
+
+    const int left      = ui.displaySpaceLeftX + 4;
+    const int top       = ui.displaySpaceTopY + 4;
+    const int lineH     = 18;
+    const int PAGE      = 8;
+    const int MAX_CHARS = 46;      // what fits across the panel at Arial 9
+
+    // Start on the last page so the newest entries show first.
+    int firstShown = (lineCount > PAGE) ? (int)lineCount - PAGE : 0;
+    bool needsPaint = true;
+    char text[64];
+
+    saveInputState();   // the SET that chose this item is not a fresh press in here
+
+    while (true) {
+        beginPass();
+
+        if (needsPaint) {
+            ui.drawTitleBar("Diagnostics");
+            ui.clearDisplaySpace();
+            ui.lcdSetFont(Arial_9_Bold);
+
+            ui.lcdSetFontColor(LCD_YELLOW);
+            ui.lcdSetCursorXY(left, top);
+            snprintf(text, sizeof text, "Boot %lu   log lines %u   showing %d-%d",
+                     (unsigned long)diagBootNumber, lineCount,
+                     lineCount ? firstShown + 1 : 0,
+                     firstShown + ((int)lineCount - firstShown < PAGE ? (int)lineCount - firstShown : PAGE));
+            ui.lcdPrint(text);
+
+            ui.lcdSetFontColor(LCD_WHITE);
+            if (lineCount == 0) {
+                ui.lcdSetCursorXY(left, top + lineH);
+                ui.lcdPrint("(log is empty)");
+            }
+            for (int row = 0; row < PAGE && firstShown + row < (int)lineCount; row++) {
+                strncpy(text, lines[firstShown + row], MAX_CHARS);
+                text[MAX_CHARS] = '\0';
+                ui.lcdSetCursorXY(left, top + (row + 1) * lineH);
+                ui.lcdPrint(text);
+            }
+
+            ui.lcdSetFontColor(LCD_LIGHTGREY);
+            ui.lcdSetCursorXY(left, ui.displaySpaceBottomY - 14);
+            snprintf(text, sizeof text, "%s older  %s newer  GC exit", listBackName, listForwardName);
+            ui.lcdPrint(text);
+            needsPaint = false;
+        }
+
+        if (pressEdge(listBackAddr) && firstShown > 0) {
+            firstShown = (firstShown >= PAGE) ? firstShown - PAGE : 0;
+            needsPaint = true;
+        }
+        if (pressEdge(listForwardAddr) && firstShown + PAGE < (int)lineCount) {
+            firstShown += PAGE;
+            if (firstShown > (int)lineCount - PAGE) firstShown = (int)lineCount - PAGE;
+            if (firstShown < 0) firstShown = 0;
+            needsPaint = true;
+        }
+        if (pressEdge(cancelAddr)) { saveInputState(); return; }
+
+        saveInputState();
+    }
+}
+
+// ============================================================
 // The menu
 // ============================================================
 void pistonMenuRun() {
@@ -345,8 +422,9 @@ void pistonMenuRun() {
     const uint8_t ITEM_CALIBRATE = 0;
     const uint8_t ITEM_CRESCENDO = 1;
     const uint8_t ITEM_TUNING    = 2;
-    uint8_t     itemId[3];
-    const char* itemLabel[3];
+    const uint8_t ITEM_DIAG      = 3;
+    uint8_t     itemId[4];
+    const char* itemLabel[4];
     uint8_t     itemCount = 0;
 
     bool hasAnalogShoe = false;
@@ -356,6 +434,7 @@ void pistonMenuRun() {
     if (hasAnalogShoe)        { itemId[itemCount] = ITEM_CALIBRATE; itemLabel[itemCount] = "Calibrate Shoes"; itemCount++; }
     if (crescendoAvailable)   { itemId[itemCount] = ITEM_CRESCENDO; itemLabel[itemCount] = "Crescendo";       itemCount++; }
     if (ORGAN_TUNING_PRESENT) { itemId[itemCount] = ITEM_TUNING;    itemLabel[itemCount] = "Tuning";          itemCount++; }
+    itemId[itemCount] = ITEM_DIAG; itemLabel[itemCount] = "Diagnostics"; itemCount++;   // always present
 
     // The SET still held and the GC that opened the menu are already down, so
     // baseline them now: neither may count as a fresh press in here.
@@ -371,12 +450,12 @@ void pistonMenuRun() {
         if (needsPaint) {
             ui.drawTitleBar("Config");
             ui.clearDisplaySpace();
-            const int y0 = ui.displaySpaceTopY + 30;
+            const int y0 = ui.displaySpaceTopY + 26;   // 4 items fit above the hint line
             for (uint8_t i = 0; i < itemCount; i++) {
                 char label[24];   // a writable copy: TUI's drawButton takes char*
                 strncpy(label, itemLabel[i], sizeof label - 1);
                 label[sizeof label - 1] = '\0';
-                ui.drawButton(label, selected == i, ui.displaySpaceCenterX, y0 + i * 48, 240, 38);
+                ui.drawButton(label, selected == i, ui.displaySpaceCenterX, y0 + i * 42, 240, 34);
             }
             ui.lcdSetFont(Arial_9_Bold);
             ui.lcdSetFontColor(LCD_LIGHTGREY);
@@ -399,6 +478,7 @@ void pistonMenuRun() {
             if (itemId[selected] == ITEM_CALIBRATE) runCalibrateShoes();
             if (itemId[selected] == ITEM_CRESCENDO) runCrescendoProgram();
             if (itemId[selected] == ITEM_TUNING)    runTuning();
+            if (itemId[selected] == ITEM_DIAG)      runDiagnostics();
             needsPaint = true;
             continue;   // the screen already saved the input state
         }
