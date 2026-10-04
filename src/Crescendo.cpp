@@ -311,6 +311,11 @@ void crescendoProgStore() {
 }
 
 void crescendoProgrammingPoll() {
+    // 1.13.1: only while the programming screen is up. Without this, a sketch
+    // that calls this every scan pass (as the header says to) stored a crescendo
+    // level, auto-incremented and recalled it on EVERY SET press in normal
+    // operation whenever CRESC.DAT opened -- even on a console with no shoe.
+    if (currentScreen != SCREEN_CRESCENDO) return;
     if (!ADDR_VALID(setPistonAddr)) return;
     if (inputChanged(setPistonAddr) && readInput(setPistonAddr)) {  // press edge
         crescendoProgStore();

@@ -67,6 +67,8 @@ void crescendoProgNav(int8_t delta);  // up/down: step displayed level 1..31 (cl
 void crescendoProgStore();            // SET: store current in-scope registration to the displayed level, then auto-increment
 // Poll the console SET piston edge while programming (call in the scan block,
 // before saveInputState). On-screen SET calls crescendoProgStore() directly.
+// Does nothing unless currentScreen == SCREEN_CRESCENDO (1.13.1), so it is safe
+// to call every pass; a console with no crescendo shoe may omit it altogether.
 void crescendoProgrammingPoll();
 
 #endif // ORGANCORE_CRESCENDO_H
