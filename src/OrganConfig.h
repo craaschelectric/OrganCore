@@ -221,11 +221,10 @@ extern const bool     TOUCH_INVERT_Y;
 // samples through.
 extern const bool     TOUCH_ENABLED;
 
-// Panel health readback (1.13.0, OrganDiag). true = every 2 s ask the ILI9341 for
-// its power-mode register and re-initialize the panel if it has lost its setup
-// (a browned-out panel stays lit but goes grey). Needs the panel's MISO line
-// connected; if the readback proves unusable the check switches itself off for
-// that boot and logs it. false = no readback.
+// Panel health readback (1.13.0, OrganDiag). NOT SUPPORTED since 1.13.2: it needed
+// TeensyUserInterface's private ILI9341 object. The value must still be defined
+// (existing ConfigData files keep linking) and is ignored; true logs one line
+// saying so. The display is still re-initialized after a USB link recovery.
 extern const bool     DISPLAY_READBACK_ENABLED;
 extern const char* const displayLineLabel[];
 extern const uint8_t  SYSEX_SAVE_LINE_INDEX;

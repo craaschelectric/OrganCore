@@ -831,12 +831,21 @@ void displayInit() {
     displayReady = true;
 }
 
-// Re-run the panel half of displayInit() -- the ILI9341 init sequence, rotation
-// and palette -- and repaint the current screen. For a panel that has lost its
-// configuration (brownout) while the Teensy kept running. Touch and tab
-// selection are untouched. Called by OrganDiag (1.13.0).
+// Re-initialize the panel and repaint the current screen. For a panel that has
+// lost its configuration (brownout) while the Teensy kept running. Called by
+// OrganDiag (1.13.0).
+//
+// This calls TeensyUserInterface's public begin() again, which re-runs the
+// ILI9341 init sequence and re-selects the rotation. (1.13.0 called
+// lcdInitialize() directly; that method is private in the TeensyUserInterface
+// that ships with Teensyduino, so the library did not compile.) begin() also
+// re-initializes the touch controller and restores its default calibration for
+// the orientation; touch inversion is applied to finished coordinates in
+// uiGetTouchEvents(), so it is unaffected. The palette is set again, as in
+// displayInit(); the tab selection and screen state are untouched.
 void displayReinit() {
-    ui.lcdInitialize((int)TFT_ORIENTATION, Arial_9_Bold);
+    ui.begin(TFT_CS_PIN, TFT_DC_PIN, TOUCH_CS_PIN,
+             (int)TFT_ORIENTATION, Arial_9_Bold);
     ui.setColorPaletteGray();
     displayForceRepaint();
 }

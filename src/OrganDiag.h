@@ -33,20 +33,15 @@
 //     SSH to the Pi:   stty -F /dev/ttyACM0 115200 raw; cat /dev/ttyACM0 &
 //                      printf D > /dev/ttyACM0
 //
-// DISPLAY HEALTH (DISPLAY_READBACK_ENABLED)
-// A panel that browns out keeps its backlight but loses its configuration and
-// shows grey, while the Teensy carries on. The firmware cannot see that by
-// itself, so with readback enabled it asks the ILI9341 for its power-mode
-// register every couple of seconds and re-initializes the panel if it reports
-// "asleep" or "display off". That needs the panel's MISO line connected. If the
-// readback never produces a sane value (MISO not connected) the check disables
-// itself for the rest of the boot and says so in the log, rather than
-// re-initializing the panel over and over.
+// DISPLAY RE-INITIALIZATION
+// After a USB link recovery the panel is re-initialized (the same supply dip that
+// drops USB can brown out a VUSB-powered panel), and the title bar reads "MIDI
+// LINK LOST - RESTART ORGAN" until the next power-up, because only restarting the
+// engine brings its MIDI input back.
 //
-// After a USB link recovery the panel is re-initialized regardless (the same
-// supply dip that drops USB is what browns out a VUSB-powered panel), and the
-// title bar reads "MIDI LINK LOST - RESTART ORGAN" until the next power-up,
-// because only restarting the engine brings its MIDI input back.
+// 1.13.0 also had a periodic panel readback (DISPLAY_READBACK_ENABLED). It needed
+// TeensyUserInterface's private ILI9341 object and did not compile, so it was
+// removed in 1.13.2. The contract value remains and is ignored.
 
 #ifndef ORGANDIAG_H
 #define ORGANDIAG_H

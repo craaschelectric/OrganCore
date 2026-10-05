@@ -29,7 +29,9 @@
 class OrganQSPIFlash : public LittleFS
 {
 public:
-	constexpr OrganQSPIFlash() { }
+	// Not constexpr: LittleFS's own constructor is not (Teensyduino 1.59), and a
+	// constexpr constructor may not call a non-constexpr one.
+	OrganQSPIFlash() { }
 	bool begin();
 	const char * getMediaName();
 	const char * name() { return getMediaName(); }
@@ -62,7 +64,7 @@ private:
 class OrganQSPIFlash : public LittleFS
 {
 public:
-	constexpr OrganQSPIFlash() { }
+	OrganQSPIFlash() { }
 	bool begin() { return false; }
 	uint8_t lastJedecId[3] = {0, 0, 0};
 };

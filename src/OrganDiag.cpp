@@ -1,9 +1,8 @@
 // OrganDiag.cpp  -  field diagnostics. See OrganDiag.h for what and why.
 
 #include "OrganDiag.h"
-#include "OrganCore.h"          // contract: DISPLAY_READBACK_ENABLED, TFT_ORIENTATION
+#include "OrganCore.h"          // contract: DISPLAY_READBACK_ENABLED
 #include "OrganStorage.h"       // organFS / organStorageMount()
-#include "Display.h"            // ui (and ILI9341_t3 via TeensyUserInterface)
 #include "DisplayManager.h"     // displayReinit(), displayReady
 #include <usb_dev.h>            // usb_configuration (Teensy core)
 #include <stdio.h>
@@ -13,7 +12,6 @@ static const char*    DIAG_LOG_NAME  = "DIAG.LOG";
 static const char*    DIAG_OLD_NAME  = "DIAG.OLD";
 static const char*    DIAG_CNT_NAME  = "DIAG.CNT";
 static const uint32_t DIAG_LOG_MAX_BYTES     = 4096;   // roll over to DIAG.OLD past this
-static const uint32_t DISPLAY_CHECK_PERIOD_MS = 2000;
 
 bool     diagLinkLostNotice = false;
 uint32_t diagBootNumber     = 0;
@@ -26,10 +24,7 @@ static bool     usbWasConfigured = false;
 static uint32_t usbLostAtMs      = 0;
 
 static bool     displayReinitPending  = false;
-static bool     readbackTrusted       = true;  // false once readback proves useless
-static uint8_t  badReadCount          = 0;     // consecutive "panel lost its setup" reads
-static bool     reinitJustDone        = false; // last action was a readback-driven re-init
-static uint32_t nextDisplayCheckMs    = 0;
+static bool     readbackNoticeLogged  = false; // DISPLAY_READBACK_ENABLED ignored: said so once
 
 // ============================================================
 // Logging
@@ -190,44 +185,20 @@ void diagPoll(bool atRunScreen) {
         return;
     }
 
-    // ---- Panel health readback ----
-    if (!DISPLAY_READBACK_ENABLED || !readbackTrusted) return;
-    if ((int32_t)(millis() - nextDisplayCheckMs) < 0) return;
-    nextDisplayCheckMs = millis() + DISPLAY_CHECK_PERIOD_MS;
-
-    // ILI9341 Read Display Power Mode. Healthy after init: sleep-out (bit 4) and
-    // display-on (bit 2) both set. A panel that browned out comes back asleep
-    // with the display off. MISO not connected reads as 0x00 or 0xFF; 0xFF looks
-    // healthy (harmless, nothing is detected), 0x00 looks broken -- which is why
-    // a re-init that does not fix the reading turns the check off.
-    uint8_t powerMode = ui.lcd->readcommand8(ILI9341_RDMODE);
-    bool healthy = (powerMode & 0x14) == 0x14;
-
-    if (healthy) {
-        badReadCount   = 0;
-        reinitJustDone = false;
-        return;
+    // ---- Panel health readback: not supported ----
+    // 1.13.0 asked the ILI9341 for its power-mode register every two seconds and
+    // re-initialized a panel that reported itself asleep. That needs the ILI9341_t3
+    // object, which TeensyUserInterface keeps private (the call was `ui.lcd->`,
+    // and TeensyUserInterface has no such member), so it did not compile. Reading
+    // the register any other way would mean driving the SPI bus underneath
+    // TeensyUserInterface, so the periodic check is gone. DISPLAY_READBACK_ENABLED
+    // stays in the contract so existing ConfigData files still link; if it is set
+    // true it is ignored, and that is logged once. The re-initialization after a
+    // USB link recovery (above) is unchanged.
+    if (DISPLAY_READBACK_ENABLED && !readbackNoticeLogged) {
+        readbackNoticeLogged = true;
+        diagLog("DISPLAY_READBACK_ENABLED ignored: panel readback is not supported");
     }
-
-    badReadCount++;
-    if (badReadCount < 2) return;          // one odd read is not enough
-    badReadCount = 0;
-
-    if (reinitJustDone) {
-        // We re-initialized and the panel still reads wrong: the readback is not
-        // telling the truth (most likely MISO is not connected). Stop checking.
-        readbackTrusted = false;
-        char line[80];
-        snprintf(line, sizeof line, "display readback unusable (0x%02X) - check MISO; readback off", powerMode);
-        diagLog(line);
-        return;
-    }
-
-    char line[64];
-    snprintf(line, sizeof line, "display lost its setup (power mode 0x%02X), re-initializing", powerMode);
-    diagLog(line);
-    displayReinit();
-    reinitJustDone = true;
 }
 
 // ============================================================
