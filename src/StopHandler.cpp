@@ -51,6 +51,16 @@ struct StopRetry {
 };
 static StopRetry stopRetry[MAX_STOPS];
 
+// A SAM stop moved by a LOCAL command (a combination recall or General Cancel,
+// through stopSetState) must still be reported to the engine. Its sense contact
+// changes while the coil is energized, and processStopInputs() ignores sense
+// changes during that window (it exists to keep contact bounce away from the
+// engine), so the report was never sent. This flag marks a stop whose final state
+// is still owed to the engine; checkStopRetries() sends it once the move is
+// confirmed, or once the retries are exhausted. Host-commanded moves do not set
+// it: the engine already knows what it asked for.
+static bool stopReportOnConfirm[MAX_STOPS];
+
 // ============================================================
 // Helpers
 // ============================================================
@@ -141,6 +151,7 @@ static int16_t midiToStopIndex(uint8_t channel, uint8_t note) {
 void stopInit() {
     memset(stopCommandedState, 0, sizeof(stopCommandedState));
     memset(stopRetry, 0, sizeof(stopRetry));
+    memset(stopReportOnConfirm, 0, sizeof(stopReportOnConfirm));
     numActiveCoils = 0;
 
     // Fire OFF coils for all SAM stops with retry tracking
@@ -168,6 +179,7 @@ void processStopInputs() {
 
             bool physicalState = getSenseState(i);
             sendStopMidi(i, physicalState);
+            stopReportOnConfirm[i] = false;   // reported already; do not send it again on confirm
         } else {
             // A lamp that just changed can couple into its own sense line and
             // look exactly like a contact closure. Ignore edges while settling.
@@ -197,11 +209,14 @@ void stopSetState(uint16_t stopIndex, bool on) {
     stopInputSettleUntil = millis() + STOP_INPUT_SETTLE_MS;
 
     if (isSAMStop(i)) {
-        // SAM: fire the coil only if physical sense disagrees. The sense change
-        // is reported to the PC engine by processStopInputs() on a later scan,
-        // so no separate MIDI send is needed here.
+        // SAM: fire the coil only if physical sense disagrees. The knob's sense
+        // change happens while the coil is energized, which processStopInputs()
+        // ignores, so the engine is told when the move is confirmed instead
+        // (checkStopRetries). If sense already agrees there is nothing to do and
+        // nothing to report: the engine already has the physical state.
         if (on != getSenseState(i)) {
             fireCoilWithRetry(i, on);
+            stopReportOnConfirm[i] = true;
         }
     } else {
         // Screen/light stop: commanded is truth. Mirror to the PC engine now
@@ -275,6 +290,10 @@ void checkStopRetries() {
             Serial.print(SAM_RETRY_MAX - stopRetry[i].retriesRemaining);
             Serial.println(" retries used)");
             stopRetry[i].retriesRemaining = 0;
+            if (stopReportOnConfirm[i]) {
+                sendStopMidi(i, senseNow);        // tell the engine the knob has moved
+                stopReportOnConfirm[i] = false;
+            }
             continue;
         }
 
@@ -291,6 +310,10 @@ void checkStopRetries() {
             Serial.print(stopRetry[i].expectedState ? "ON" : "OFF");
             Serial.print(" Actual=");
             Serial.println(senseNow ? "ON" : "OFF");
+            if (stopReportOnConfirm[i]) {
+                sendStopMidi(i, senseNow);        // sense is truth: tell the engine where the knob really is
+                stopReportOnConfirm[i] = false;
+            }
             continue;
         }
 

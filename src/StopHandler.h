@@ -54,10 +54,13 @@ void processStopInputs();
 
 // Command a stop to a target state by index (used by local-SD combination
 // recall and cancel). Sets commanded state; for a SAM stop it fires the coil
-// only if sense differs (the tested pulse/retry path), and the resulting sense
-// change is what reports the new state to the PC engine over MIDI. For a screen
-// or light stop (commanded-is-truth) it sends the stop MIDI directly and lets
-// buildStopOutputs() drive any lamp.
+// only if sense differs (the tested pulse/retry path). The knob's sense change
+// happens while the coil is energized, which processStopInputs() ignores, so the
+// stop is flagged and checkStopRetries() sends the confirmed state to the PC
+// engine over MIDI once the move is confirmed (or the retries are exhausted, in
+// which case it sends where the knob really is). If sense already agrees, nothing
+// is sent. For a screen or light stop (commanded-is-truth) it sends the stop MIDI
+// directly and lets buildStopOutputs() drive any lamp.
 void stopSetState(uint16_t stopIndex, bool on);
 
 // Handle incoming MIDI from Hauptwerk for a stop.
