@@ -21,6 +21,7 @@ static uint32_t resetCauseRegister = 0;     // SRC_SRSR as found at boot
 
 static bool     usbMonitorArmed  = false;
 static bool     usbWasConfigured = false;
+static bool     usbEverConfigured = false;   // USB has completed enumeration at least once since boot
 static uint32_t usbLostAtMs      = 0;
 
 static bool     displayReinitPending  = false;
@@ -124,8 +125,9 @@ void diagInit() {
 }
 
 void diagBootComplete() {
-    usbWasConfigured = (usb_configuration != 0);
-    usbMonitorArmed  = true;
+    usbWasConfigured  = (usb_configuration != 0);
+    usbEverConfigured = usbWasConfigured;
+    usbMonitorArmed   = true;
 }
 
 // ============================================================
@@ -150,11 +152,17 @@ static void dumpFile(const char* name) {
 void diagPoll(bool atRunScreen) {
     // ---- USB link monitor ----
     bool usbConfigured = (usb_configuration != 0);
+    // 1.13.4: the first enumeration is not a recovery. setup() usually finishes
+    // before the host has enumerated the Teensy, so diagBootComplete() records
+    // "not configured"; the host completing enumeration a few seconds later was
+    // then reported as a link restored after a loss that never happened (and the
+    // "restored after" time was just the time since power-on). A loss or a
+    // recovery now only counts once USB has been configured at least once.
     if (usbMonitorArmed && usbConfigured != usbWasConfigured) {
         if (!usbConfigured) {
             usbLostAtMs = millis();
             diagLog("USB link lost");
-        } else {
+        } else if (usbEverConfigured) {
             char line[64];
             snprintf(line, sizeof line, "USB link restored after %lu ms",
                      (unsigned long)(millis() - usbLostAtMs));
@@ -163,6 +171,7 @@ void diagPoll(bool atRunScreen) {
             displayReinitPending = true;   // same dip that drops USB browns out the panel
         }
     }
+    if (usbMonitorArmed && usbConfigured) usbEverConfigured = true;
     usbWasConfigured = usbConfigured;
 
     // ---- Serial dump on 'D' ----
