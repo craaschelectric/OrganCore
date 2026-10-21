@@ -76,6 +76,7 @@
 #include "OrganDiag.h"         // diagLinkLostNotice for the title bar, diagPoll in the menu pump
 #include "ExpressionCalScreen.h"
 #include "PistonMenu.h"         // the TOUCH_ENABLED=false (piston-driven) menu and screens
+#include "AboutScreen.h"        // aboutScreenPaint() for the About entry in runConfigScreen()
 #include "TuningConfig.h"
 #include "TuningScreen.h"
 #include "PitchManager.h"      // pitchManagerPoll() - see the pump block in runConfigScreen()
@@ -673,6 +674,10 @@ static void runConfigScreen() {
                               ui.displaySpaceCenterX, rowY(row++), 260, btnH };
             ui.drawButton(tuneBtn);
         }
+        BUTTON aboutBtn = { "About",
+                            ui.displaySpaceCenterX, rowY(row++), 260, btnH };
+        ui.drawButton(aboutBtn);
+
         BUTTON backBtn  = { "Back",
                             ui.displaySpaceCenterX, rowY(row++), 160, btnH };
         ui.drawButton(backBtn);
@@ -708,6 +713,28 @@ static void runConfigScreen() {
             }
             if (ORGAN_TUNING_PRESENT && ui.checkForButtonClicked(tuneBtn)) {
                 tuningScreenRun();           // blocking; returns here on Back
+                break;                       // redraw this menu
+            }
+            if (ui.checkForButtonClicked(aboutBtn)) {
+                // Read-only screen, written inline because nothing else calls it.
+                aboutScreenPaint();
+                BUTTON aboutBackBtn = { "Back",
+                                        ui.displaySpaceCenterX, ui.displaySpaceBottomY - 22, 160, btnH };
+                ui.drawButton(aboutBackBtn);
+
+                bool leaveAbout = false;
+                while (!leaveAbout) {
+                    // The same pump as the menu above, for the same reasons.
+                    scanAllChains();
+                    powerPoll();
+                    diagPoll(false);
+                    uiGetTouchEvents();
+                    usbMIDI.read();
+                    tempSensorPoll();
+                    pitchManagerPoll();
+
+                    if (ui.checkForButtonClicked(aboutBackBtn)) leaveAbout = true;
+                }
                 break;                       // redraw this menu
             }
             if (ui.checkForButtonClicked(backBtn)) {

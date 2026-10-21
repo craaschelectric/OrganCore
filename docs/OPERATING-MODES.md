@@ -296,7 +296,9 @@ Config menu entries, in order, appearing or not according to config so nothing o
    just the first-boot defaults).
 2. **Crescendo Program** — hands off to `SCREEN_CRESCENDO` and returns.
 3. **Tuning / Temperature** — only when `ORGAN_TUNING_PRESENT`.
-4. **Back.**
+4. **About** (1.14.0) — read-only: the OrganCore version (`ORGANCORE_VERSION`), the sketch's
+   `FIRMWARE_VERSION`, and `ABOUT_DESCRIPTION`. Its own Back button returns to the menu.
+5. **Back.**
 
 ### Piston-driven display (`TOUCH_ENABLED` false, 1.12.0)
 
@@ -318,7 +320,9 @@ With touch off, the console's pistons drive the display instead (`PistonMenu.*`)
   *Crescendo* — when present; recalls level 1, the step pistons move between levels, SET
   stores and advances, GC leaves; the stop handlers keep running so drawknobs work. *Tuning* —
   when `ORGAN_TUNING_PRESENT`; the step pistons trim, SET resets the trim, GC leaves.
-- All three are blocking; the keyboards do not play while the menu is open. On leaving,
+  *Diagnostics* — the tail of `DIAG.LOG`, paged with the list pistons. *About* (1.14.0), always
+  last — the OrganCore version, `FIRMWARE_VERSION` and `ABOUT_DESCRIPTION`; GC goes back.
+- All of these are blocking; the keyboards do not play while the menu is open. On leaving,
   `setHeld` is re-read from the SET piston, since its release happened inside the menu.
 
 ### Orientation and touch inversion

@@ -61,7 +61,9 @@ membership) are independent — a stop can be in a division yet excluded from it
   GENERAL CANCEL** to open the menu (that press does not cancel). In the menu and its screens,
   SET acts, GENERAL CANCEL goes back, MEM+/MEM− move in a list (falling back to NEXT/PREV), and
   NEXT/PREV step a value (falling back to MEM+/MEM−). Items: *Calibrate Shoes* (every analog shoe,
-  crescendo shoe included), *Crescendo* (when present), *Tuning* (when `ORGAN_TUNING_PRESENT`).
+  crescendo shoe included), *Crescendo* (when present), *Tuning* (when `ORGAN_TUNING_PRESENT`),
+  *Diagnostics*, and *About* (OrganCore version, `FIRMWARE_VERSION`, `ABOUT_DESCRIPTION`; 1.14.0,
+  also on the touch config menu).
   The sketch's `loop()` needs nothing new: the combination back-end flags the chord and
   `displayUpdate()` runs the menu.
 

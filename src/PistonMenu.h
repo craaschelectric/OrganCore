@@ -21,6 +21,9 @@
 //   Calibrate Shoes  every analog shoe, including the crescendo shoe
 //   Crescendo        when a crescendo shoe and its storage are present
 //   Tuning           when ORGAN_TUNING_PRESENT
+//   Diagnostics      always
+//   About            always, last (1.14.0): OrganCore version, firmware version
+//                    and the instrument's description; GENERAL CANCEL goes back
 //
 // All screens are blocking, like the touch config screens. While one is open
 // the keyboards do not play. Each screen keeps scanning, applies the duplicate-

@@ -20,6 +20,7 @@
 #include "OrganDiag.h"             // diagPoll, diagReadLog, diagBootNumber
 #include "CombinationConfig.h"     // ORGAN_COMBINATION_MODE
 #include "MidiOut.h"               // midiSendNoteOff (HW mode SET release)
+#include "AboutScreen.h"           // aboutScreenPaint
 
 #include <stdio.h>
 #include <string.h>
@@ -423,8 +424,9 @@ void pistonMenuRun() {
     const uint8_t ITEM_CRESCENDO = 1;
     const uint8_t ITEM_TUNING    = 2;
     const uint8_t ITEM_DIAG      = 3;
-    uint8_t     itemId[4];
-    const char* itemLabel[4];
+    const uint8_t ITEM_ABOUT     = 4;
+    uint8_t     itemId[5];
+    const char* itemLabel[5];
     uint8_t     itemCount = 0;
 
     bool hasAnalogShoe = false;
@@ -434,7 +436,8 @@ void pistonMenuRun() {
     if (hasAnalogShoe)        { itemId[itemCount] = ITEM_CALIBRATE; itemLabel[itemCount] = "Calibrate Shoes"; itemCount++; }
     if (crescendoAvailable)   { itemId[itemCount] = ITEM_CRESCENDO; itemLabel[itemCount] = "Crescendo";       itemCount++; }
     if (ORGAN_TUNING_PRESENT) { itemId[itemCount] = ITEM_TUNING;    itemLabel[itemCount] = "Tuning";          itemCount++; }
-    itemId[itemCount] = ITEM_DIAG; itemLabel[itemCount] = "Diagnostics"; itemCount++;   // always present
+    itemId[itemCount] = ITEM_DIAG;  itemLabel[itemCount] = "Diagnostics"; itemCount++;   // always present
+    itemId[itemCount] = ITEM_ABOUT; itemLabel[itemCount] = "About";       itemCount++;   // always present, always last
 
     // The SET still held and the GC that opened the menu are already down, so
     // baseline them now: neither may count as a fresh press in here.
@@ -450,12 +453,12 @@ void pistonMenuRun() {
         if (needsPaint) {
             ui.drawTitleBar("Config");
             ui.clearDisplaySpace();
-            const int y0 = ui.displaySpaceTopY + 26;   // 4 items fit above the hint line
+            const int y0 = ui.displaySpaceTopY + 20;   // centre of the first button; all 5 items fit above the hint line
             for (uint8_t i = 0; i < itemCount; i++) {
                 char label[24];   // a writable copy: TUI's drawButton takes char*
                 strncpy(label, itemLabel[i], sizeof label - 1);
                 label[sizeof label - 1] = '\0';
-                ui.drawButton(label, selected == i, ui.displaySpaceCenterX, y0 + i * 42, 240, 34);
+                ui.drawButton(label, selected == i, ui.displaySpaceCenterX, y0 + i * 34, 240, 30);
             }
             ui.lcdSetFont(Arial_9_Bold);
             ui.lcdSetFontColor(LCD_LIGHTGREY);
@@ -479,6 +482,25 @@ void pistonMenuRun() {
             if (itemId[selected] == ITEM_CRESCENDO) runCrescendoProgram();
             if (itemId[selected] == ITEM_TUNING)    runTuning();
             if (itemId[selected] == ITEM_DIAG)      runDiagnostics();
+            if (itemId[selected] == ITEM_ABOUT) {
+                // Read-only screen, written inline because nothing else calls it.
+                // GENERAL CANCEL goes back to this menu.
+                aboutScreenPaint();
+                ui.lcdSetFont(Arial_9_Bold);
+                ui.lcdSetFontColor(LCD_LIGHTGREY);
+                ui.lcdSetCursorXY(ui.displaySpaceLeftX + 6, ui.displaySpaceBottomY - 14);
+                ui.lcdPrint("GC exit");
+
+                saveInputState();   // the SET that chose this item is not a fresh press in here
+                while (true) {
+                    beginPass();
+                    if (pressEdge(cancelAddr)) break;
+                    saveInputState();
+                }
+                // Baseline the GC that closed About, or this menu would see the
+                // same press and close too.
+                saveInputState();
+            }
             needsPaint = true;
             continue;   // the screen already saved the input state
         }

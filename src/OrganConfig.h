@@ -190,6 +190,21 @@ extern const uint8_t  displayLineLen[];
 // font.
 extern const char* const CONSOLE_NAME;
 
+// About screen (1.14.0), the last item in the config menu. Both strings are
+// shown as given and are required: omitting either fails to link.
+//
+// FIRMWARE_VERSION identifies this build of the sketch: the date and time it was
+// made, to the minute, in Pacific time with the zone label (PDT in summer, PST
+// in winter), for example "2026-10-21 07:51 PDT". About 20 characters fit on one
+// line, and this is 20.
+//
+// ABOUT_DESCRIPTION is free text about this instrument, such as the venue and
+// opus number. A '\n' starts a new line. Up to 4 lines of about 44 characters
+// are shown; a longer line wraps at the screen edge, and anything past the
+// fourth line is not shown. "" shows no description.
+extern const char* const FIRMWARE_VERSION;
+extern const char* const ABOUT_DESCRIPTION;
+
 // ---- TFT + touch controller pins (ILI9341 + XPT2046, TUI-owned SPI bus) ----
 extern const uint8_t  TFT_CS_PIN;
 extern const uint8_t  TFT_DC_PIN;
