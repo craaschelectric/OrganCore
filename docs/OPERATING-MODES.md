@@ -318,11 +318,14 @@ With touch off, the console's pistons drive the display instead (`PistonMenu.*`)
 - **Items.** *Calibrate Shoes* — every analog shoe, the crescendo shoe included; SET on a
   Min/Max cell captures the live reading, SET on Save writes EEPROM, GC leaves unsaved.
   *Crescendo* — when present; recalls level 1, the step pistons move between levels, SET
-  stores and advances, GC leaves; the stop handlers keep running so drawknobs work. *Tuning* —
-  when `ORGAN_TUNING_PRESENT`; the step pistons trim, SET resets the trim, GC leaves.
+  stores and advances, GC leaves; the keys and the stop handlers keep running so the registration
+  can be heard as it is built (keys added 1.14.1). *Tuning* — when `ORGAN_TUNING_PRESENT`; the
+  step pistons trim, SET resets the trim, GC leaves; the keys and drawknobs stay live so a note
+  can be played and heard while trimming (1.14.1), the other pistons do not.
   *Diagnostics* — the tail of `DIAG.LOG`, paged with the list pistons. *About* (1.14.0), always
   last — the OrganCore version, `FIRMWARE_VERSION` and `ABOUT_DESCRIPTION`; GC goes back.
-- All of these are blocking; the keyboards do not play while the menu is open. On leaving,
+- All of these are blocking; apart from Crescendo and Tuning (above), the keyboards do not play
+  while the menu is open. On leaving,
   `setHeld` is re-read from the SET piston, since its release happened inside the menu.
 
 ### Orientation and touch inversion

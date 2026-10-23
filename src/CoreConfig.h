@@ -11,7 +11,7 @@
 // `version=` in library.properties; both change together on every release.
 // It lives in the library, not the sketch, so the About screen reports the
 // OrganCore that was actually linked into the firmware and cannot drift.
-constexpr const char* ORGANCORE_VERSION = "1.14.0";
+constexpr const char* ORGANCORE_VERSION = "1.14.1";
 
 // ---- Fixed capacities (used for all static array sizing) ----
 constexpr uint8_t  MAX_CHAINS         = 12;  // raised from 8 (originally for the builder piston-assign slot chain, removed in 1.12.0); chain index field is 4 bits (see ADDR_CHAIN) and ADDR_DISABLED sits off every chain.

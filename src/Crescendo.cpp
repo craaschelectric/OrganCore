@@ -266,6 +266,13 @@ static void crescReleaseOverlay() {
     overlayActive = false;
 }
 
+// Public wrapper, for screens that must hear drawknob changes while the blocking
+// config menu is up (Tuning): drops an engaged tutti or crescendo so the stop
+// engine is the sole sender again.
+void crescendoReleaseOverlay() {
+    crescReleaseOverlay();
+}
+
 void crescendoProgEnter() {
     crescReleaseOverlay();
     crescendoProgLevel = 1;

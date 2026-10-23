@@ -60,6 +60,12 @@ extern bool tuttiEngaged;
 void tuttiEngage(const uint8_t* record);   // copy record, engage, light indicator
 void tuttiRelease();                       // disengage, darken indicator
 
+// Collapse any engaged tutti or crescendo overlay back to the drawn registration
+// and hand stop sending back to the stop engine (1.14.1). Called on entry to the
+// Tuning screens, which keep the stops live so the organist can hear what is
+// being tuned.
+void crescendoReleaseOverlay();
+
 // ---- Programming screen support ----
 void crescendoProgEnter();            // enter programming: reset to level 1, recall if set
 void crescendoProgExit();             // leave programming (overlay resumes in operation)

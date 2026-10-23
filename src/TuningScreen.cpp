@@ -18,6 +18,10 @@
 #include "OrganPower.h"       // powerPoll() - the power switch works on every screen
 #include "OrganDiag.h"        // diagPoll()
 #include "ScanChain.h"        // scanAllChains() - powerPoll() reads inputBuffer
+#include "InputRemap.h"       // applyRemaps
+#include "KeyboardHandler.h"  // processKeyboards - tuning is done by ear
+#include "StopHandler.h"      // processStopInputs, buildStopOutputs, updateCoilPulses, checkStopRetries
+#include "Crescendo.h"        // crescendoReleaseOverlay
 #include "TempSensor.h"
 #include "Display.h"            // shared ui instance
 
@@ -25,6 +29,14 @@
 #include <string.h>
 
 void tuningScreenRun() {
+    // Tuning is interactive: the keys and drawknobs stay live (1.14.1) so the
+    // organist can play a note and listen while trimming. An engaged tutti or
+    // crescendo is dropped first, or it would mute the drawknobs.
+    crescendoReleaseOverlay();
+    scanAllChains();
+    applyRemaps();
+    saveInputState();   // whatever is held on entry is not a fresh press in here
+
     ui.drawTitleBar("Tuning / Temperature");
     ui.clearDisplaySpace();
 
@@ -58,12 +70,21 @@ void tuningScreenRun() {
         // pulseActive true -- after which every further trim is a no-op on the
         // feedback path because recalcAndApply() guards on !pulseActive.
         scanAllChains();            // refresh inputs so powerPoll() sees the switch
+        applyRemaps();              // toe studs onto their primary contacts
         powerPoll();                // the power switch works on every screen
         diagPoll(false);            // USB link monitor + serial dump (no re-init in a menu)
         uiGetTouchEvents();         // sampled every loop -> responsive touch
         usbMIDI.read();             // GrandOrgue's pitch reports arrive here
         tempSensorPoll();           // keep the temperature reading live
         pitchManagerPoll();         // nudge note-offs and retry timeouts
+
+        // Keys and drawknobs, as loop() runs them on the run screen. Pistons are
+        // left out on purpose: a general would change the registration mid-tune.
+        processKeyboards();
+        processStopInputs();
+        buildStopOutputs();
+        updateCoilPulses();
+        checkStopRetries();
 
         char line[NLINES][44];
         snprintf(line[0], sizeof(line[0]), "Temp:        %.1f C", (double)getTempDegC());
@@ -91,7 +112,9 @@ void tuningScreenRun() {
         if (ui.checkForButtonClicked(upBtn))    pitchManagerManualUp();
         if (ui.checkForButtonClicked(downBtn))  pitchManagerManualDown();
         if (ui.checkForButtonClicked(resetBtn)) pitchManagerManualReset();
-        if (ui.checkForButtonClicked(backBtn))  return;
+        if (ui.checkForButtonClicked(backBtn))  { saveInputState(); return; }
+
+        saveInputState();           // this pass's key edges are consumed
     }
 }
 

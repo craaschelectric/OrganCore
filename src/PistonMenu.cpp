@@ -11,6 +11,7 @@
 #include "InputRemap.h"            // applyRemaps
 #include "PistonHandler.h"         // setHeld
 #include "StopHandler.h"           // processStopInputs, buildStopOutputs, updateCoilPulses, checkStopRetries
+#include "KeyboardHandler.h"       // processKeyboards (Tuning keeps the keys live)
 #include "Crescendo.h"             // crescendoAvailable, crescendoProgLevel, crescendoProg*
 #include "ExpressionCalibration.h" // calibratedExprMin/Max, expressionCalibrationSave
 #include "TuningConfig.h"
@@ -167,9 +168,10 @@ static void runCalibrateShoes() {
                 snprintf(text, sizeof text, "Max %u", workingMax[slot]);
                 ui.lcdPrint(text);
             }
-            char saveLabel[] = "Save";
-            ui.drawButton(saveLabel, selected == 2 * rowCount,
-                          ui.displaySpaceCenterX, ui.displaySpaceBottomY - 42, 120, 30);
+            // Upper-left anchored overload (see the config menu): centre it by hand,
+            // and keep the bottom edge above the hint line.
+            ui.drawButton("Save", selected == 2 * rowCount,
+                          ui.displaySpaceCenterX - 60, ui.displaySpaceBottomY - 52, 120, 30);
             ui.lcdSetFont(Arial_9_Bold);
             ui.lcdSetFontColor(LCD_LIGHTGREY);
             ui.lcdSetCursorXY(left, ui.displaySpaceBottomY - 14);
@@ -243,6 +245,7 @@ static void runCrescendoProgram() {
         if (pressEdge(setAddr))      crescendoProgStore();   // stores, then auto-increments
         if (pressEdge(cancelAddr))   break;
 
+        processKeyboards();     // the registration is heard as it is built (1.14.1)
         processStopInputs();
         buildStopOutputs();
         updateCoilPulses();
@@ -287,7 +290,14 @@ static void runCrescendoProgram() {
 // The same readout as the touch Tuning / Temperature screen. The step pistons
 // trim up and down, SET resets the trim, GENERAL CANCEL leaves. Trim changes
 // are saved by PitchManager as they are made, as on the touch screen.
+//
+// Tuning is interactive: the organist trims, then plays a note and listens. So
+// the keyboards and the drawknobs stay live here (1.14.1), exactly as on the
+// Crescendo programming screen. The pistons do not (a general would change the
+// registration mid-tuning), which also leaves NEXT/PREV/SET free for the trim.
 static void runTuning() {
+    crescendoReleaseOverlay();   // a tutti or crescendo left engaged would mute the drawknobs
+
     ui.drawTitleBar("Tuning / Temperature");
     ui.clearDisplaySpace();
 
@@ -305,6 +315,8 @@ static void runTuning() {
     ui.lcdSetCursorXY(lineX, ui.displaySpaceBottomY - 14);
     ui.lcdPrint(hint);
 
+    saveInputState();   // the SET that chose this item is not a fresh press in here
+
     while (true) {
         beginPass();
 
@@ -312,6 +324,15 @@ static void runTuning() {
         if (pressEdge(stepDownAddr)) pitchManagerManualDown();
         if (pressEdge(setAddr))      pitchManagerManualReset();
         if (pressEdge(cancelAddr))   { saveInputState(); return; }
+
+        // Keys and stops, as loop() runs them on the run screen. Every key edge
+        // is seen here before saveInputState(), so a note held when GC is pressed
+        // still gets its note-off from the run screen afterwards.
+        processKeyboards();
+        processStopInputs();
+        buildStopOutputs();
+        updateCoilPulses();
+        checkStopRetries();
 
         char line[NUM_LINES][44];
         snprintf(line[0], sizeof(line[0]), "Temp:        %.1f C", (double)getTempDegC());
@@ -453,12 +474,20 @@ void pistonMenuRun() {
         if (needsPaint) {
             ui.drawTitleBar("Config");
             ui.clearDisplaySpace();
-            const int y0 = ui.displaySpaceTopY + 20;   // centre of the first button; all 5 items fit above the hint line
+            // This drawButton overload takes the button's UPPER-LEFT corner, not its
+            // centre (the BUTTON-struct overloads are the centre-anchored ones). 1.14.0
+            // passed the screen centre as the left edge, so every 240 px button ran
+            // off the right of the 320 px display. Centre it by hand: left = centre - w/2.
+            const int buttonW   = 240;
+            const int buttonH   = 30;
+            const int buttonGap = 4;
+            const int left0     = ui.displaySpaceCenterX - buttonW / 2;
+            const int top0      = ui.displaySpaceTopY + 8;   // 5 items end at top0 + 4*34 + 30, clear of the hint line
             for (uint8_t i = 0; i < itemCount; i++) {
-                char label[24];   // a writable copy: TUI's drawButton takes char*
+                char label[24];
                 strncpy(label, itemLabel[i], sizeof label - 1);
                 label[sizeof label - 1] = '\0';
-                ui.drawButton(label, selected == i, ui.displaySpaceCenterX, y0 + i * 34, 240, 30);
+                ui.drawButton(label, selected == i, left0, top0 + i * (buttonH + buttonGap), buttonW, buttonH);
             }
             ui.lcdSetFont(Arial_9_Bold);
             ui.lcdSetFontColor(LCD_LIGHTGREY);
