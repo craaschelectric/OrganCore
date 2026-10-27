@@ -66,6 +66,12 @@ void tuttiRelease();                       // disengage, darken indicator
 // being tuned.
 void crescendoReleaseOverlay();
 
+// The host reported a stop change that was NOT an echo of the overlay (the organist
+// touched a stop on the host screen) while an overlay is engaged. Record that the host
+// is now in this state, so the next crescendoPoll() resends the effective state if the
+// overlay wants the stop otherwise (1.14.2). Called by onStopMidiReceived().
+void crescendoEngineStopChanged(uint16_t stopIndex, bool on);
+
 // ---- Programming screen support ----
 void crescendoProgEnter();            // enter programming: reset to level 1, recall if set
 void crescendoProgExit();             // leave programming (overlay resumes in operation)

@@ -13,6 +13,7 @@
 #include "StopHandler.h"
 #include "MidiOut.h"
 #include "Debug.h"
+#include "Crescendo.h"      // crescendoEngineStopChanged
 
 // ============================================================
 // State
@@ -60,6 +61,14 @@ static StopRetry stopRetry[MAX_STOPS];
 // confirmed, or once the retries are exhausted. Host-commanded moves do not set
 // it: the engine already knows what it asked for.
 static bool stopReportOnConfirm[MAX_STOPS];
+
+// When the blind overlay last sent each stop to the engine (1.14.2). The host
+// reports every stop change back out, including the ones it made because the overlay
+// told it to. onStopMidiReceived() ignores a stop note that arrives within
+// STOP_ECHO_IGNORE_MS of the overlay's own send for that stop: it is that echo, and
+// treating it as a draw would write the crescendo's stops into the drawn registration.
+static uint32_t overlaySentAtMs[MAX_STOPS];
+static bool     overlaySentValid[MAX_STOPS];
 
 // ============================================================
 // Helpers
@@ -135,6 +144,8 @@ static void sendStopMidi(uint8_t stopIdx, bool on) {
 void stopSendToEngine(uint16_t stopIndex, bool on) {
     if (stopIndex >= NUM_STOPS) return;
     sendStopMidi((uint8_t)stopIndex, on);
+    overlaySentAtMs[stopIndex]  = millis();   // the echo of this send is not an organist draw
+    overlaySentValid[stopIndex] = true;
 }
 
 static int16_t midiToStopIndex(uint8_t channel, uint8_t note) {
@@ -152,6 +163,7 @@ void stopInit() {
     memset(stopCommandedState, 0, sizeof(stopCommandedState));
     memset(stopRetry, 0, sizeof(stopRetry));
     memset(stopReportOnConfirm, 0, sizeof(stopReportOnConfirm));
+    memset(overlaySentValid, 0, sizeof(overlaySentValid));
     numActiveCoils = 0;
 
     // Fire OFF coils for all SAM stops with retry tracking
@@ -236,8 +248,17 @@ void onStopMidiReceived(uint8_t channel, uint8_t note, bool on) {
     if (idx < 0) return;
 
     uint8_t i = (uint8_t)idx;
+
+    // The echo of the blind overlay's own send is not a draw: ignore it entirely, so it
+    // can neither write the overlay's stops into the drawn registration nor move a SAM
+    // knob the overlay is meant to leave alone.
+    if (overlaySentValid[i] && (uint32_t)(millis() - overlaySentAtMs[i]) < STOP_ECHO_IGNORE_MS) {
+        return;
+    }
+
     stopCommandedState[i] = on;
     stopInputSettleUntil = millis() + STOP_INPUT_SETTLE_MS;
+    crescendoEngineStopChanged(i, on);   // a real touch while an overlay is engaged: the host is now in this state
 
     if (isSAMStop(i)) {
         bool physicalState = getSenseState(i);

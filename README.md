@@ -102,7 +102,10 @@ No new engine code — it's configuration:
 - Incoming touches are **not** echoed (Hauptwerk already knows; echoing risks a feedback loop).
   Outbound stop MIDI happens only when the combination system recalls/cancels, which reports
   every in-scope stop. This is loop-safe by structure: `onStopMidiReceived` never emits, and the
-  only emitter (`stopSetState`) is called only by local recall/cancel.
+  only emitters (`stopSetState`, and the blind overlay through `stopSendToEngine`) are called
+  only by local recall/cancel and the crescendo/tutti. The host echoes the overlay's own sends;
+  `onStopMidiReceived` ignores a stop note within `STOP_ECHO_IGNORE_MS` of the overlay's send
+  (1.14.2).
 
 ## Documentation
 

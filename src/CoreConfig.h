@@ -11,9 +11,15 @@
 // `version=` in library.properties; both change together on every release.
 // It lives in the library, not the sketch, so the About screen reports the
 // OrganCore that was actually linked into the firmware and cannot drift.
-constexpr const char* ORGANCORE_VERSION = "1.14.1";
+constexpr const char* ORGANCORE_VERSION = "1.14.2";
 
 // ---- Fixed capacities (used for all static array sizing) ----
+// Echo window for the blind overlays (1.14.2). A host that reports every stop change
+// back out (Hauptwerk does, including changes it made because the controller told it
+// to) sends the overlay's own stop notes straight back. A stop note that arrives this
+// soon after the overlay sent that stop is that echo, not the organist, and is ignored.
+constexpr uint32_t STOP_ECHO_IGNORE_MS = 300;
+
 constexpr uint8_t  MAX_CHAINS         = 12;  // raised from 8 (originally for the builder piston-assign slot chain, removed in 1.12.0); chain index field is 4 bits (see ADDR_CHAIN) and ADDR_DISABLED sits off every chain.
 constexpr uint16_t BITS_PER_CHAIN     = 256;
 constexpr uint8_t  WORDS_PER_CHAIN    = 16;
