@@ -179,6 +179,10 @@ void crescendoPoll() {
         }
     }
 
+    if (newLevel != crescendoLevel) {
+        Serial.print("DBG: Crescendo level "); Serial.println(newLevel);
+    }
+
     bool wasActive = overlayActive;
     bool nowActive = (newLevel > 0) || tuttiEngaged;
 
@@ -264,6 +268,16 @@ static void crescReleaseOverlay() {
     stopEngineSuppressed = false;
     crescendoLevel = 0;
     overlayActive = false;
+}
+
+// The host moved a stop by itself (a touch on its screen) while an overlay is engaged.
+// lastSentEffective tracks what the host holds, so it follows the host; the next
+// crescendoPoll() then resends the effective state if the overlay wants that stop
+// otherwise. A touch cannot remove a stop the crescendo or tutti is adding.
+void crescendoEngineStopChanged(uint16_t stopIndex, bool on) {
+    if (!stopEngineSuppressed) return;          // no overlay engaged: nothing tracks the host
+    if (stopIndex >= NUM_STOPS) return;
+    lastSentEffective[stopIndex] = on;
 }
 
 // Public wrapper, for screens that must hear drawknob changes while the blocking

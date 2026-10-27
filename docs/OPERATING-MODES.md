@@ -156,6 +156,13 @@ echoing risks a feedback loop. This is loop-safe by structure: `onStopMidiReceiv
 emits, and the only emitter (`stopSetState()`) is called only by local recall and cancel,
 which report every in-scope stop at once.
 
+The one exception to "never emits" is the blind overlay (section 4a), which emits through
+`stopSendToEngine()`. Hauptwerk reports every stop change back out, including the ones it
+made because the overlay told it to, so since 1.14.2 `onStopMidiReceived()` ignores a stop
+note that arrives within `STOP_ECHO_IGNORE_MS` (300 ms) of the overlay's own send for that
+stop. Without that the echo was taken for the organist drawing the stop, and the crescendo's
+stops leaked into the drawn registration.
+
 **Where the state and the combinations live.** Stop state is held locally in
 `stopCommandedState[]`, and combinations are captured to `COMB.DAT` on whichever medium
 `COMBINATION_USE_SPIFLASH` selects — the console owns both, not the engine. A recall or a
@@ -231,6 +238,18 @@ commanded-is-truth sends so a manual-off of a crescendo-commanded stop can't des
 engine, and the overlay emits the OR'd state itself through `stopSendToEngine()`. SAM sense
 reporting is never suppressed. At level 0 the effective state is just the base, so releasing
 the shoe removes exactly the stops the crescendo added.
+
+The host (Hauptwerk) mirrors the overlay on its own stop screen, since that screen shows the
+same switches; "blind" means the drawn registration is untouched, not that the host's display
+is. Two rules keep the drawn registration clean (1.14.2):
+
+- **The overlay's echo is ignored.** A stop note from the host within `STOP_ECHO_IGNORE_MS`
+  of the overlay's own send for that stop never reaches `stopCommandedState[]`, and a SAM
+  knob is not moved by it.
+- **A real touch is tracked.** A stop note outside that window is the organist. It updates
+  the drawn registration, and `crescendoEngineStopChanged()` records that the host is now in
+  that state, so the overlay resends if it still wants the stop otherwise. A touch cannot
+  remove a stop the crescendo or tutti is adding while it is engaged.
 
 ### 4b. Programming — not blind
 
