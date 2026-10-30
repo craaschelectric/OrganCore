@@ -18,6 +18,8 @@ static bool     switchArmed   = false;   // has the switch been seen released?
 static uint32_t pressedSince  = 0;       // start of the current continuous press
 static bool     bootComplete  = false;   // powerBootComplete() has been called
 static bool     shuttingDown  = false;   // latch: the sequence runs once
+static uint32_t keepAlivePulseLastToggleMs = 0;       // when the pulse bit last flipped
+static bool     keepAlivePulseLevel        = false;   // what it was flipped to
 
 // ------------------------------------------------------------
 // Assert the keep-alive: whatever "stay powered" means on this console.
@@ -125,6 +127,19 @@ void powerShutdownNow() {
         //    the backstop for a host that dies without saying so.
         uint32_t started = millis();
         while (millis() - started < POWER_HOST_HALT_MS) {
+            // A pulse-fed supply relay drops about 50 ms after the pulses stop,
+            // which would cut the host's mains in the middle of its halt. Keep
+            // pulsing through the wait; the pulse stops only when step 6 releases
+            // the supply. (shuttingDown is already set, so powerPoll() itself
+            // would not do this.)
+            if (ADDR_VALID(POWER_KEEPALIVE_PULSE_ADDR) &&
+                millis() - keepAlivePulseLastToggleMs >= POWER_KEEPALIVE_PULSE_MS) {
+                keepAlivePulseLastToggleMs = millis();
+                keepAlivePulseLevel = !keepAlivePulseLevel;
+                setOutput(POWER_KEEPALIVE_PULSE_ADDR, keepAlivePulseLevel);
+            }
+            if (ADDR_VALID(POWER_KEEPALIVE_PULSE_ADDR)) scanAllChains();
+
             // Released -- our pull-up takes the line HIGH -- means the host has
             // begun halting in earnest. A real signal, where the timeout below
             // is only a guess.
@@ -152,6 +167,18 @@ void powerShutdownNow() {
 
 // ------------------------------------------------------------
 void powerPoll() {
+    // The keep-alive pulse comes first and comes before every early return: it
+    // must keep running with no power switch, before the arming latch is armed,
+    // and on every blocking screen's pump. Flipping the output buffer bit is all
+    // that happens here; the next scanAllChains() shifts it out.
+    if (ADDR_VALID(POWER_KEEPALIVE_PULSE_ADDR) && !shuttingDown) {
+        if (millis() - keepAlivePulseLastToggleMs >= POWER_KEEPALIVE_PULSE_MS) {
+            keepAlivePulseLastToggleMs = millis();
+            keepAlivePulseLevel = !keepAlivePulseLevel;
+            setOutput(POWER_KEEPALIVE_PULSE_ADDR, keepAlivePulseLevel);
+        }
+    }
+
     if (POWER_SWITCH_ADDR == ADDR_DISABLED) return;
     if (shuttingDown) return;
 

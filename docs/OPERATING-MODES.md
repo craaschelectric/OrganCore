@@ -1,6 +1,6 @@
 # OrganCore — Operating Modes
 
-Reference for OrganCore **v1.7.0** (`github.com/craaschelectric/OrganCore`).
+Reference for OrganCore **v1.15.0** (`github.com/craaschelectric/OrganCore`).
 
 OrganCore is one Arduino library serving every console. A console is a thin sketch that
 supplies `Config.h` + `ConfigData.cpp` and wires the USB-MIDI handlers; the library holds
@@ -8,11 +8,11 @@ the behaviour. What differs between consoles is expressed as *modes* — a small
 selectable behaviours, almost all of them ordinary `extern const` config values rather than
 build flags.
 
-Only **two** compile-time switches remain in the whole library:
+Only **one** compile-time switch remains in the whole library (1.15.0 made the combination
+mode a run-time value):
 
 | Switch | Where | Why it can't be config data |
 |---|---|---|
-| `ORGAN_COMBINATION_MODE` | `CombinationConfig.h` | `PistonHandler.cpp` and `CombinationSD.cpp` define the same symbols; compiling both is a duplicate-symbol link error |
 | `DEBUG_ENABLED` | `Debug.h` | The prints and their format strings have to not exist |
 
 Everything else below is decided at run time from `ConfigData.cpp`, so moving between
@@ -23,15 +23,16 @@ consoles never means editing a library header.
 ## 1. Combination action mode
 
 The primary mode axis: **who owns the combination action.** Selected by
-`ORGAN_COMBINATION_MODE` in `CombinationConfig.h` (default `COMBINATION_MODE_SD`, or
-`-DORGAN_COMBINATION_MODE=`). Exactly one back-end links; there is no runtime dispatch.
+`COMBINATION_HOST_OWNED` in `ConfigData.cpp` (1.15.0; no build flag). Both back-ends are
+always compiled and `pistonInit()`/`processPistons()` in `PistonHandler.cpp` dispatch on it.
+A build that still passes `-DORGAN_COMBINATION_MODE` fails with an `#error` saying so.
 
-### 1a. `COMBINATION_MODE_HW` — host-owned combinations
+### 1a. `COMBINATION_HOST_OWNED = true` — host-owned combinations
 
-`PistonHandler.cpp` compiles. Pistons are pure input: a press sends a MIDI NoteOn on
+`PistonHandler.cpp` runs the pistons. Pistons are pure input: a press sends a MIDI NoteOn on
 `PISTON_MIDI_CHANNEL` and the PC engine (Hauptwerk) builds the registration and commands
 stops back over MIDI. `combinationInit()` is a no-op and `combinationAvailable` is always
-false. No card, no local storage.
+false. No local combination storage is used.
 
 Behaviour in this mode:
 
@@ -47,10 +48,10 @@ Behaviour in this mode:
 A HW-mode console may still have a full physical stop action — coils, sense, lamps all
 work as in section 3. The mode says where combinations live, not whether stops are real.
 
-### 1b. `COMBINATION_MODE_SD` — local combinations
+### 1b. `COMBINATION_HOST_OWNED = false` — local combinations
 
-`CombinationSD.cpp` compiles and supplies **both** the combination API and the piston
-processing (`pistonInit`/`processPistons`), since the HW piston file is compiled out.
+`CombinationSD.cpp` supplies **both** the combination API and the local piston
+processing (`localPistonInit`/`localProcessPistons`, which `PistonHandler.cpp` calls).
 Capture and recall run on the Teensy and drive stops through `stopSetState()`, reusing the
 tested coil pulse/retry path.
 
@@ -455,7 +456,8 @@ global to the machine rather than per sketch.
 
 | Mode | Selected by | When |
 |---|---|---|
-| Combination action (HW / local) | `ORGAN_COMBINATION_MODE` | compile |
+| Combination action (host / local) | `COMBINATION_HOST_OWNED` | boot |
+| Storage fitted (No Storage) | `STORAGE_ENABLED` | boot |
 | Debug prints | `DEBUG_ENABLED` | compile |
 | Storage medium, all files (SD / QSPI) | `COMBINATION_USE_SPIFLASH` | boot |
 | Display orientation | `TFT_ORIENTATION` | boot |

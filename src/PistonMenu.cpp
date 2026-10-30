@@ -19,7 +19,7 @@
 #include "TempSensor.h"            // tempSensorPoll, getTempDegC
 #include "OrganPower.h"            // powerPoll
 #include "OrganDiag.h"             // diagPoll, diagReadLog, diagBootNumber
-#include "CombinationConfig.h"     // ORGAN_COMBINATION_MODE
+#include "CombinationConfig.h"     // combination file format
 #include "MidiOut.h"               // midiSendNoteOff (HW mode SET release)
 #include "AboutScreen.h"           // aboutScreenPaint
 
@@ -457,7 +457,8 @@ void pistonMenuRun() {
     if (hasAnalogShoe)        { itemId[itemCount] = ITEM_CALIBRATE; itemLabel[itemCount] = "Calibrate Shoes"; itemCount++; }
     if (crescendoAvailable)   { itemId[itemCount] = ITEM_CRESCENDO; itemLabel[itemCount] = "Crescendo";       itemCount++; }
     if (ORGAN_TUNING_PRESENT) { itemId[itemCount] = ITEM_TUNING;    itemLabel[itemCount] = "Tuning";          itemCount++; }
-    itemId[itemCount] = ITEM_DIAG;  itemLabel[itemCount] = "Diagnostics"; itemCount++;   // always present
+    // A No Storage console keeps no DIAG.LOG, so the screen would only ever say "none".
+    if (STORAGE_ENABLED)      { itemId[itemCount] = ITEM_DIAG;      itemLabel[itemCount] = "Diagnostics";     itemCount++; }
     itemId[itemCount] = ITEM_ABOUT; itemLabel[itemCount] = "About";       itemCount++;   // always present, always last
 
     // The SET still held and the GC that opened the menu are already down, so
@@ -547,16 +548,11 @@ void pistonMenuRun() {
     bool setWasHeld = setHeld;
     setHeld = ADDR_VALID(setAddr) && readInput(setAddr);
 
-#if ORGAN_COMBINATION_MODE == COMBINATION_MODE_HW
     // With Hauptwerk owning the combination action, SET's press went to the
     // host as a note-on. Its release happened in here, so send the note-off the
     // piston handler never got the chance to send.
-    if (setWasHeld && !setHeld && setPistonIndex != 0xFF &&
+    if (COMBINATION_HOST_OWNED && setWasHeld && !setHeld && setPistonIndex != 0xFF &&
         pistonMidiNote[setPistonIndex] != 0xFF) {
         midiSendNoteOff(pistonMidiNote[setPistonIndex], 0, PISTON_MIDI_CHANNEL);
     }
-#else
-    (void)setWasHeld;
-    (void)setPistonIndex;
-#endif
 }

@@ -21,7 +21,7 @@
 //   Calibrate Shoes  every analog shoe, including the crescendo shoe
 //   Crescendo        when a crescendo shoe and its storage are present
 //   Tuning           when ORGAN_TUNING_PRESENT
-//   Diagnostics      always
+//   Diagnostics      when STORAGE_ENABLED (1.15.0; a No Storage console keeps no log)
 //   About            always, last (1.14.0): OrganCore version, firmware version
 //                    and the instrument's description; GENERAL CANCEL goes back
 //

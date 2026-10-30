@@ -7,17 +7,15 @@
 #include "DisplayManager.h"   // currentScreen (SET is repurposed on the crescendo screen)
 #include "Debug.h"
 
-#if ORGAN_COMBINATION_MODE == COMBINATION_MODE_HW
-
 // ------------------------------------------------------------
-// HW-in-command build. Pistons are Hauptwerk-side (this file). The combination
-// state below exists only so a display module can link in either back-end;
-// combinationInit() is a no-op because there is no local SD combination here.
+// Host-owned combinations (COMBINATION_HOST_OWNED true): Hauptwerk builds the
+// registration, so every piston here is a MIDI note. When the console owns its
+// combinations instead, pistonInit()/processPistons() hand straight over to the
+// local back-end in CombinationSD.cpp. Both back-ends are always compiled, and
+// the choice is made at run time from ConfigData (1.15.0) -- no build flag.
+//
+// This file also owns the piston display state shared by both back-ends.
 // ------------------------------------------------------------
-bool        combinationAvailable  = false;
-uint16_t    combinationMemoryLevel = 0;
-const char* combinationErrorText   = nullptr;
-void combinationInit() {}
 
 // ============================================================
 // State
@@ -153,6 +151,8 @@ static void handlePrevious() {
 // ============================================================
 
 void pistonInit() {
+    if (!COMBINATION_HOST_OWNED) { localPistonInit(); return; }
+
     setHeld = false;
     shiftHeld = false;
     shiftConsumed = false;
@@ -167,6 +167,8 @@ void pistonInit() {
 // ============================================================
 
 void processPistons() {
+    if (!COMBINATION_HOST_OWNED) { localProcessPistons(); return; }
+
     // --- Pass 1: Update SHIFT state first ---
     for (uint8_t i = 0; i < NUM_PISTONS; i++) {
         if (pistonType[i] != PISTON_TYPE_SHIFT) continue;
@@ -325,4 +327,3 @@ void processPistons() {
     }
 }
 
-#endif // ORGAN_COMBINATION_MODE == COMBINATION_MODE_HW

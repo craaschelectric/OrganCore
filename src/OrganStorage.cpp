@@ -34,6 +34,10 @@ const char* organStorageError = nullptr;
 bool organStorageMount() {
     if (organFS) return true;
 
+    // No Storage console: there is nothing to mount and nothing to report. Leave
+    // organStorageError null so the display shows no fault line.
+    if (!STORAGE_ENABLED) return false;
+
     if (COMBINATION_USE_SPIFLASH) {
         if (!organFlash.begin()) {
             organStorageError = "SPI FLASH MISSING";

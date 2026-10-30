@@ -74,6 +74,25 @@ extern const uint8_t  VIRTUAL_CHAIN_MAX_NOTE;
 // always compiled and the choice is made at mount (see OrganStorage).
 extern const bool     COMBINATION_USE_SPIFLASH;
 
+// Who owns the combination action (1.15.0: instrument config, no build flag).
+//   true  = the host owns it (Hauptwerk "in control"). Pistons send MIDI notes,
+//           the PC builds the registration and commands the stops back, and the
+//           controller keeps no combination memory.
+//   false = the controller owns it. SET + piston captures, a piston recalls, and
+//           the registrations live on the storage medium above.
+// Local combinations need storage, so COMBINATION_HOST_OWNED false with
+// STORAGE_ENABLED false is a configuration error: the combination action is
+// disabled and the display says "STORAGE DISABLED".
+extern const bool     COMBINATION_HOST_OWNED;
+
+// The No Storage setting (1.15.0). false = this console has neither an SD card nor
+// a QSPI flash chip fitted: the library never touches either, prints nothing
+// about a missing card, keeps no DIAG.LOG (diagnostics go to Serial only), and
+// the Crescendo programming entry does not appear. Only EEPROM is used, for the
+// shoe calibration. true = the medium chosen by COMBINATION_USE_SPIFLASH is
+// mounted at boot as before.
+extern const bool     STORAGE_ENABLED;
+
 
 // ---- Stops ----
 extern const uint16_t stopSenseAddr[];
@@ -289,6 +308,23 @@ extern const uint8_t  POWER_KEEPALIVE_PIN;
 // held. Everything dies together so the next press is a cold boot. See
 // POWER-CONTROL.md.
 extern const bool     POWER_KEEPALIVE_ACTIVE_HIGH;
+
+// A keep-alive that is a PULSE TRAIN on an output chain bit rather than a level on
+// a pin (1.15.0). The Rodgers 770 feeds its supply relay through an AC-coupled
+// pulse input (KA, output chain 6 bit 0): the relay holds only while that bit keeps
+// toggling, and drops about 50 ms after it stops. powerPoll() flips the bit every
+// POWER_KEEPALIVE_PULSE_MS; the flip is shifted out by the next scanAllChains().
+// Because powerPoll() and scanAllChains() are both pumped by every blocking
+// screen, the pulse keeps running in the config menus and calibration screens,
+// where a pulse owed by loop() alone would drop the relay.
+// ADDR_DISABLED = no pulse. This is independent of POWER_KEEPALIVE_PIN: a console
+// may use either, both or neither.
+extern const uint16_t POWER_KEEPALIVE_PULSE_ADDR;
+
+// Half-period of that pulse in ms (one toggle per interval). Keep the full period
+// (twice this) comfortably under the relay's drop-out time: 10 gives a 20 ms
+// period against the 770's roughly 50 ms.
+extern const uint32_t POWER_KEEPALIVE_PULSE_MS;
 
 // The console power switch, as an input bit address. Momentary. On the consoles
 // this was built for it is also the ON switch -- it bypasses the supply relay,

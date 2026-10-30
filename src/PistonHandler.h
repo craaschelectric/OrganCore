@@ -37,4 +37,10 @@ extern bool generalDisplayDirty;
 void pistonInit();
 void processPistons();
 
+// The local-combination back-end (CombinationSD.cpp). pistonInit() and
+// processPistons() call these when COMBINATION_HOST_OWNED is false; nothing else
+// should.
+void localPistonInit();
+void localProcessPistons();
+
 #endif // PISTON_HANDLER_H

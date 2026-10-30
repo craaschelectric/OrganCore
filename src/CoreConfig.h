@@ -11,7 +11,7 @@
 // `version=` in library.properties; both change together on every release.
 // It lives in the library, not the sketch, so the About screen reports the
 // OrganCore that was actually linked into the firmware and cannot drift.
-constexpr const char* ORGANCORE_VERSION = "1.14.2";
+constexpr const char* ORGANCORE_VERSION = "1.15.0";
 
 // ---- Fixed capacities (used for all static array sizing) ----
 // Echo window for the blind overlays (1.14.2). A host that reports every stop change
@@ -61,27 +61,24 @@ constexpr uint8_t PISTON_TYPE_MEM_ZERO   = 9;
 // TUTTI: a general-scope piston outside the NEXT/PREV sequence that holds ONE
 // registration shared by every memory level, stored at level 0
 // (CB_0000_<addr>.DAT) whatever level is showing. SET+TUTTI stores it.
-// 1.13.0: with local combination memory (COMBINATION_MODE_SD) a plain press is a
+// 1.13.0: with local combination memory (COMBINATION_HOST_OWNED false) a plain press is a
 // blind TOGGLE OVERLAY, exactly like the crescendo -- the stored tutti is OR'd
 // onto the base registration without moving any drawknob lamp, and the next
 // press (or General Cancel) removes it so the base sounds again. It no longer
 // recalls (1.11.0-1.12.0 replaced the base, which was wrong for a tutti).
 // TUTTI_INDICATOR_ADDR lights while engaged. Without local memory
-// (COMBINATION_MODE_HW) it is sent to the host like a general. Never list a TUTTI
+// (COMBINATION_HOST_OWNED true) it is sent to the host like a general. Never list a TUTTI
 // in sequencerPistonList.
 constexpr uint8_t PISTON_TYPE_TUTTI      = 10;
 
-// ---- Combination back-end mode (compile-time selection) ----
-// Which combination action is compiled in. Exactly one back-end is built.
-//   HW: pistons are Hauptwerk-side (piston -> MIDI note -> the PC engine builds
-//       the combination and commands stops back). The original tested behavior.
-//   SD: pistons are local. Capture/recall run on the controller, reading/writing
-//       an SD file and driving stops directly through StopHandler.
-// The active mode is selected in CombinationConfig.h (ORGAN_COMBINATION_MODE).
-// These are #defines (not constexpr) because the back-end guards are #if
-// directives, which the preprocessor evaluates before C++ constants exist.
-#define COMBINATION_MODE_HW 0
-#define COMBINATION_MODE_SD 1
+// ---- Combination back-end (instrument config, 1.15.0) ----
+// Who owns the combination action is COMBINATION_HOST_OWNED in ConfigData (see
+// OrganConfig.h). Both back-ends are always compiled and the choice is made at
+// run time; there is no build flag and no header to edit.
+//   host-owned: pistons are Hauptwerk-side (piston -> MIDI note -> the PC engine
+//               builds the combination and commands stops back).
+//   local:      Capture/recall run on the controller, reading/writing the storage
+//               medium and driving stops directly through StopHandler.
 
 // ---- Stop flags / division ----
 constexpr uint8_t STOP_IN_GENERALS    = 0x01;

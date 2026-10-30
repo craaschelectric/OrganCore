@@ -1,26 +1,22 @@
-// CombinationConfig.h  -  combination back-end selection + SD file format.
+// CombinationConfig.h  -  SD combination file format.
 //
-// ORGAN_COMBINATION_MODE is the LAST compile-time switch in this library, and it
-// is here because it has to be, not to save space. PistonHandler.cpp (Hauptwerk
-// owns the combination action) and CombinationSD.cpp (we do) DEFINE THE SAME
-// SYMBOLS -- processPistons(), pistonInit(), combinationAvailable, setHeld,
-// sequencerPosition. Compiling both would be a duplicate-symbol link error, so
-// exactly one back-end builds and there is no runtime dispatch. It is exclusive
-// by construction.
-//
-// In practice nobody edits it: local-SD is the default and every current console
-// uses it. The storage medium, which used to live here too, is now ordinary
-// instrument config in OrganConfig.h (COMBINATION_USE_SPIFLASH), decided at run
-// time. (The builder piston-assignment switch also lived here; that feature was
-// removed in 1.12.0.) A library header should never need editing to move between consoles.
+// Until 1.15.0 this header also held ORGAN_COMBINATION_MODE, the last compile-time
+// switch in the library, because the Hauptwerk-side PistonHandler.cpp and the
+// local CombinationSD.cpp defined the same symbols. They no longer do: both
+// back-ends are always compiled, PistonHandler.cpp dispatches, and who owns the
+// combination action is COMBINATION_HOST_OWNED in the instrument's ConfigData.
+// The storage medium (COMBINATION_USE_SPIFLASH) and whether any is fitted
+// (STORAGE_ENABLED) are ConfigData too. A library header never needs editing to
+// move between consoles.
 #ifndef ORGANCORE_COMBINATIONCONFIG_H
 #define ORGANCORE_COMBINATIONCONFIG_H
 
 #include "CoreConfig.h"
 
-// ---- Active back-end (edit this line, or pass -DORGAN_COMBINATION_MODE) ----
-#ifndef ORGAN_COMBINATION_MODE
-#define ORGAN_COMBINATION_MODE COMBINATION_MODE_SD
+// A build flag that used to select the back-end is now an error, not silently
+// ignored: a console built with it would otherwise run the wrong back-end.
+#ifdef ORGAN_COMBINATION_MODE
+#error "ORGAN_COMBINATION_MODE was removed in OrganCore 1.15.0. Set COMBINATION_HOST_OWNED (true = Hauptwerk owns combinations) in ConfigData.cpp and remove the build flag."
 #endif
 
 

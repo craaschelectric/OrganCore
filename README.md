@@ -33,14 +33,20 @@ USB-MIDI transmit path; `midiOutNoteOn(note, vel, channel)` with a **1-based** c
 
 ## Combination action
 
-Selected at compile time by `ORGAN_COMBINATION_MODE` in `CombinationConfig.h`:
+Chosen at run time by `COMBINATION_HOST_OWNED` in the instrument's `ConfigData.cpp` (1.15.0; it was
+the `ORGAN_COMBINATION_MODE` build flag until then):
 
-- `COMBINATION_MODE_HW` — pistons are Hauptwerk-side (piston → MIDI note → the PC engine builds
-  the registration and commands stops back).
-- `COMBINATION_MODE_SD` — pistons are **local**. Capture/recall run on the controller against a
-  fixed-record SD file (`COMB.DAT`): 1024 memory levels × 128 piston records × 64-byte
-  (512-bit) stop bitsets, at `offset(level, piston)`. SET+piston captures; the piston alone
+- `true` — pistons are Hauptwerk-side (piston → MIDI note → the PC engine builds
+  the registration and commands stops back). No combination memory is kept here.
+- `false` — pistons are **local**. Capture/recall run on the controller against the storage medium
+  (one small file per piston and level, `CB_<level>_<addr>.DAT`): 1024 memory levels × 64-byte
+  (512-bit) stop bitsets. SET+piston captures; the piston alone
   recalls. A Next/Prev sequencer walks the general list and wraps by stepping the memory level.
+
+`STORAGE_ENABLED` false (1.15.0) is the No Storage setting: neither SD nor QSPI is fitted, nothing is
+mounted, and only EEPROM is used. It is the right setting for a console whose host owns the
+combinations. Local combinations with no storage are a configuration error and say
+"STORAGE DISABLED" on the display.
 
 **Capture scope is computed, never stored.** A general captures every stop flagged
 `STOP_IN_GENERALS`; a divisional captures `STOP_IN_DIVISIONALS` stops whose `stopDivision`
@@ -96,7 +102,7 @@ No new engine code — it's configuration:
   no-coil condition is what matters.)
 - `stopMidiChannel`/`stopMidiNote` across the two stop channels; `STOP_IN_GENERALS` /
   `STOP_IN_DIVISIONALS` + `stopDivision` as the masks; pistons in the CWB table;
-  `ORGAN_COMBINATION_MODE = COMBINATION_MODE_SD`.
+  `COMBINATION_HOST_OWNED = false`.
 - Stops on Hauptwerk's own touch page, so `NUM_SCREEN_STOPS = 0` (the local TFT shows only
   combination status).
 - Incoming touches are **not** echoed (Hauptwerk already knows; echoing risks a feedback loop).

@@ -2,10 +2,12 @@
 //
 // The medium is mounted by OrganStorage (organFS); this file just uses it.
 //
-// Compiled only when ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD. This file
-// provides the SD combination API AND the piston processing (pistonInit /
-// processPistons), because in SD mode the Hauptwerk-side PistonHandler.cpp is
-// compiled out. Recall/cancel drive stops through StopHandler::stopSetState,
+// Always compiled (1.15.0). This file provides the local combination API AND the
+// local piston processing (localPistonInit / localProcessPistons), which
+// PistonHandler.cpp's pistonInit()/processPistons() call when
+// COMBINATION_HOST_OWNED is false. With a host-owned console combinationInit()
+// below does nothing and the rest of the file sits idle.
+// Recall/cancel drive stops through StopHandler::stopSetState,
 // so the tested coil pulse/retry path and the sense->MIDI mirroring to the PC
 // engine are reused unchanged.
 //
@@ -20,9 +22,6 @@
 // record; recall reads one; a (level, piston) pair maps to a unique byte offset.
 
 #include "CombinationConfig.h"
-
-#if ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD
-
 #include "Combination.h"
 #include "PistonHandler.h"
 #include "StopHandler.h"
@@ -53,13 +52,6 @@ static const char* LEGACY_COMBO_FILENAME = "COMB.DAT";   // removed at mount if 
 bool        combinationAvailable   = false;
 uint16_t    combinationMemoryLevel  = 0;
 const char* combinationErrorText    = nullptr;
-
-// Piston display state (declared in PistonHandler.h; the HW file that normally
-// defines these is compiled out in SD mode).
-bool    setHeld = false;
-int8_t  sequencerPosition = -1;
-char    lastGeneralName[8] = "";
-bool    generalDisplayDirty = false;
 
 static uint32_t sequencerDebounceUntil = 0;
 static uint8_t  recordBuf[COMBO_RECORD_SIZE];
@@ -229,9 +221,22 @@ void combinationMemZero() {
 // ============================================================
 
 void combinationInit() {
-    combinationMemoryLevel = configCombinationLevel;   // remembered last level
     combinationAvailable = false;
     combinationErrorText = nullptr;
+
+    // Host-owned: no local combination memory at all. Leaving the console
+    // "unavailable" with no error text is the quiet state the display expects.
+    if (COMBINATION_HOST_OWNED) return;
+
+    combinationMemoryLevel = configCombinationLevel;   // remembered last level
+
+    // Local combinations with no storage fitted cannot work. Say so on the
+    // display rather than silently doing nothing.
+    if (!STORAGE_ENABLED) {
+        combinationErrorText = "STORAGE DISABLED";
+        Serial.println("DBG: local combinations configured but STORAGE_ENABLED is false");
+        return;
+    }
 
     if (!organStorageMount()) {
         combinationErrorText = organStorageError;
@@ -293,7 +298,7 @@ static void handlePrevious() {
 // Piston processing
 // ============================================================
 
-void pistonInit() {
+void localPistonInit() {
     setHeld = false;
     sequencerPosition = -1;
     lastGeneralName[0] = '\0';
@@ -301,7 +306,7 @@ void pistonInit() {
     sequencerDebounceUntil = 0;
 }
 
-void processPistons() {
+void localProcessPistons() {
     // Pass 1: SET is a pure local modifier — track held state, send no MIDI.
     for (uint8_t i = 0; i < NUM_PISTONS; i++) {
         if (pistonType[i] != PISTON_TYPE_SET) continue;
@@ -413,4 +418,3 @@ void processPistons() {
     }
 }
 
-#endif // ORGAN_COMBINATION_MODE == COMBINATION_MODE_SD
